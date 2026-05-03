@@ -4,15 +4,15 @@ import { Inter } from 'next/font/google';
 
 const inter = Inter({ subsets: ['latin'] });
 
-export const metadata = {
+export const metadata: Metadata = {
   title: "PRISM",
   description: "Plateforme PRISM",
   icons: {
     icon: "/favicon.ico",
-    shortcut: "/favicon.ico",
-    apple: "/favicon.ico",
   },
   openGraph: {
+    title: "PRISM",
+    description: "Plateforme PRISM",
     images: [
       {
         url: 'https://bolt.new/static/og_default.png',
@@ -35,7 +35,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="fr">
       <body className={inter.className}>{children}</body>
     </html>
   );
