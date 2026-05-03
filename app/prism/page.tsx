@@ -29,6 +29,11 @@ type Condition = {
   outletPressure: number
   flowRateGs: number
   temperature: number
+  flowNm3h?: number
+  gasSpeed?: number
+  seatSize?: number
+  outletBore?: number
+  deltaP?: number
 }
 
 type ClientProfile = {
