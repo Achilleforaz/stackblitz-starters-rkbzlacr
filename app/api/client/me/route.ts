@@ -4,24 +4,22 @@ import { supabaseAdmin } from "@/app/lib/supabaseAdmin"
 export const dynamic = "force-dynamic"
 export const revalidate = 0
 
-function clean(value: any) {
+function clean(value: unknown) {
   return String(value || "").trim().toLowerCase()
 }
 
-function parseBoolean(value: any) {
+function parseBoolean(value: unknown) {
   if (value === true) return true
   if (value === false) return false
   if (value === 1) return true
   if (value === 0) return false
 
   const normalized = clean(value)
-
   return ["true", "1", "yes", "y", "on", "enabled"].includes(normalized)
 }
 
-function normalizeClient(client: any, user: any, source: string) {
+function normalizeClient(client: any, user: any) {
   return {
-    ...client,
     id: client?.id || user.id,
     email: clean(client?.email || user.email),
     first_name: client?.first_name || client?.firstName || "",
@@ -37,10 +35,11 @@ function normalizeClient(client: any, user: any, source: string) {
     is_distributor: parseBoolean(
       client?.is_distributor ?? client?.isDistributor ?? client?.distributor
     ),
-    is_active: client?.is_active === false || clean(client?.is_active) === "false" ? false : true,
-    auth_user_id: client?.auth_user_id || client?.user_id || user.id,
+    is_active:
+      client?.is_active === false || clean(client?.is_active) === "false"
+        ? false
+        : true,
     profile_found: true,
-    profile_source: source,
   }
 }
 
@@ -54,7 +53,7 @@ async function getAuthUser(request: Request) {
     }
   }
 
-  const token = authHeader.replace("Bearer ", "")
+  const token = authHeader.replace("Bearer ", "").trim()
 
   const {
     data: { user },
@@ -64,17 +63,16 @@ async function getAuthUser(request: Request) {
   if (error || !user?.email) {
     return {
       user: null,
-      error: NextResponse.json(
-        {
-          error: "Unauthorized",
-          details: error?.message || null,
-        },
-        { status: 401 }
-      ),
+      error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
     }
   }
 
   return { user, error: null }
+}
+
+function pickActive(rows: any[] | null | undefined) {
+  if (!Array.isArray(rows) || rows.length === 0) return null
+  return rows.find((row: any) => row.is_active !== false) || rows[0]
 }
 
 async function findClient(user: any) {
@@ -86,26 +84,9 @@ async function findClient(user: any) {
     .ilike("email", email)
     .limit(20)
 
-  if (byEmail.error) {
-    return {
-      client: null,
-      source: "client_users_email_error",
-      debug: byEmail.error.message,
-    }
-  }
-
-  if (byEmail.data && byEmail.data.length > 0) {
-    const active =
-      byEmail.data.find((row: any) => row.is_active !== false) || byEmail.data[0]
-
-    return {
-      client: active,
-      source: "client_users_email",
-      debug: {
-        matched_count: byEmail.data.length,
-        matched_emails: byEmail.data.map((row: any) => row.email),
-      },
-    }
+  if (!byEmail.error) {
+    const client = pickActive(byEmail.data)
+    if (client) return client
   }
 
   const relaxedEmail = await supabaseAdmin
@@ -114,22 +95,15 @@ async function findClient(user: any) {
     .ilike("email", `%${email}%`)
     .limit(20)
 
-  if (!relaxedEmail.error && relaxedEmail.data && relaxedEmail.data.length > 0) {
-    const active =
-      relaxedEmail.data.find(
+  if (!relaxedEmail.error) {
+    const client =
+      relaxedEmail.data?.find(
         (row: any) => clean(row.email) === email && row.is_active !== false
       ) ||
-      relaxedEmail.data.find((row: any) => row.is_active !== false) ||
-      relaxedEmail.data[0]
+      relaxedEmail.data?.find((row: any) => row.is_active !== false) ||
+      relaxedEmail.data?.[0]
 
-    return {
-      client: active,
-      source: "client_users_email_relaxed",
-      debug: {
-        matched_count: relaxedEmail.data.length,
-        matched_emails: relaxedEmail.data.map((row: any) => row.email),
-      },
-    }
+    if (client) return client
   }
 
   const byAuthUserId = await supabaseAdmin
@@ -138,27 +112,9 @@ async function findClient(user: any) {
     .eq("auth_user_id", user.id)
     .limit(20)
 
-  if (byAuthUserId.error) {
-    return {
-      client: null,
-      source: "client_users_auth_user_id_error",
-      debug: byAuthUserId.error.message,
-    }
-  }
-
-  if (byAuthUserId.data && byAuthUserId.data.length > 0) {
-    const active =
-      byAuthUserId.data.find((row: any) => row.is_active !== false) ||
-      byAuthUserId.data[0]
-
-    return {
-      client: active,
-      source: "client_users_auth_user_id",
-      debug: {
-        matched_count: byAuthUserId.data.length,
-        matched_emails: byAuthUserId.data.map((row: any) => row.email),
-      },
-    }
+  if (!byAuthUserId.error) {
+    const client = pickActive(byAuthUserId.data)
+    if (client) return client
   }
 
   const byId = await supabaseAdmin
@@ -167,39 +123,14 @@ async function findClient(user: any) {
     .eq("id", user.id)
     .limit(20)
 
-  if (byId.error) {
-    return {
-      client: null,
-      source: "client_users_id_error",
-      debug: byId.error.message,
-    }
-  }
-
-  if (byId.data && byId.data.length > 0) {
-    const active =
-      byId.data.find((row: any) => row.is_active !== false) || byId.data[0]
-
-    return {
-      client: active,
-      source: "client_users_id",
-      debug: {
-        matched_count: byId.data.length,
-        matched_emails: byId.data.map((row: any) => row.email),
-      },
-    }
+  if (!byId.error) {
+    const client = pickActive(byId.data)
+    if (client) return client
   }
 
   const rpc = await supabaseAdmin.rpc("admin_list_client_users")
 
-  if (rpc.error) {
-    return {
-      client: null,
-      source: "admin_list_client_users_error",
-      debug: rpc.error.message,
-    }
-  }
-
-  if (Array.isArray(rpc.data)) {
+  if (!rpc.error && Array.isArray(rpc.data)) {
     const matches = rpc.data.filter((row: any) => {
       return (
         clean(row.email) === email ||
@@ -209,40 +140,11 @@ async function findClient(user: any) {
       )
     })
 
-    if (matches.length > 0) {
-      const active =
-        matches.find((row: any) => row.is_active !== false) || matches[0]
-
-      return {
-        client: active,
-        source: "admin_list_client_users",
-        debug: {
-          matched_count: matches.length,
-          matched_emails: matches.map((row: any) => row.email),
-        },
-      }
-    }
-
-    return {
-      client: null,
-      source: "not_found_after_rpc",
-      debug: {
-        auth_email: email,
-        auth_user_id: user.id,
-        rpc_count: rpc.data.length,
-        first_rpc_emails: rpc.data.slice(0, 10).map((row: any) => row.email),
-      },
-    }
+    const client = pickActive(matches)
+    if (client) return client
   }
 
-  return {
-    client: null,
-    source: "not_found",
-    debug: {
-      auth_email: email,
-      auth_user_id: user.id,
-    },
-  }
+  return null
 }
 
 async function linkClient(client: any, user: any) {
@@ -267,9 +169,9 @@ export async function GET(request: Request) {
 
   if (error) return error
 
-  const result = await findClient(user)
+  const client = await findClient(user)
 
-  if (!result.client) {
+  if (!client) {
     return NextResponse.json(
       {
         client: {
@@ -281,10 +183,7 @@ export async function GET(request: Request) {
           can_view_prices: false,
           is_distributor: false,
           is_active: true,
-          auth_user_id: user.id,
           profile_found: false,
-          profile_source: result.source,
-          profile_debug: result.debug,
         },
       },
       {
@@ -295,12 +194,11 @@ export async function GET(request: Request) {
     )
   }
 
-  await linkClient(result.client, user)
+  await linkClient(client, user)
 
   return NextResponse.json(
     {
-      client: normalizeClient(result.client, user, result.source),
-      debug: result.debug,
+      client: normalizeClient(client, user),
     },
     {
       headers: {
