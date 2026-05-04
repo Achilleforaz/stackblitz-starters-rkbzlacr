@@ -412,6 +412,10 @@ export default function PrismPage() {
             gasSpeed: 0,
             seatSizeMm: 0,
             outletBoreMm: 0,
+            maxFlowDeltaP: 0,
+            maxFlowSeat: 0,
+            maxFlowPort: 0,
+            expectedOutletVelocity: 0,
           }
 
       if (sizing.seatSizeMm > minRequiredSeatSize) {
