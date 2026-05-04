@@ -456,7 +456,7 @@ export default function PrismPage() {
       return (
         dnMm >= minRequiredSeatSize &&
         portBoreMm >= minRequiredOutletBoreSize &&
-        mwp <= sizingSummary.maxInletPressure
+        mwp >= sizingSummary.maxInletPressure
       )
     })
   }, [
