@@ -5,15 +5,14 @@ import { Inter } from 'next/font/google';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: "PRISM",
-  description: "Plateforme PRISM",
+  title: 'PRISM',
+  description: 'Plateforme PRISM',
   icons: {
-    icon: "/favicon.ico",
+    icon: '/favicon.ico',
   },
-};
   openGraph: {
-    title: "PRISM",
-    description: "Plateforme PRISM",
+    title: 'PRISM',
+    description: 'Plateforme PRISM',
     images: [
       {
         url: 'https://bolt.new/static/og_default.png',
