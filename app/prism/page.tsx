@@ -620,15 +620,13 @@ export default function PrismPage() {
 
     const pageWidth = pdf.internal.pageSize.getWidth()
     const pageHeight = pdf.internal.pageSize.getHeight()
-    const margin = 10
+    const margin = 9
     const purple = [69, 0, 232] as [number, number, number]
-    const red = [255, 74, 74] as [number, number, number]
+    const accent = [255, 74, 74] as [number, number, number]
     const dark = [23, 24, 56] as [number, number, number]
     const muted = [100, 116, 139] as [number, number, number]
-    const light = [246, 248, 252] as [number, number, number]
+    const light = [244, 247, 251] as [number, number, number]
     const lineColor = [203, 213, 225] as [number, number, number]
-    const contentX = margin + 4
-    const contentW = pageWidth - margin * 2 - 8
 
     function setText(color: [number, number, number] = dark) {
       pdf.setTextColor(color[0], color[1], color[2])
@@ -669,58 +667,9 @@ export default function PrismPage() {
       return 1
     }
 
-    function statusColor(status: unknown): [number, number, number] {
-      const value = displayValue(status)
-      if (value === "OK") return [22, 101, 52]
-      if (value === "Near limit") return [180, 83, 9]
-      if (value === "Exceeds") return [185, 28, 28]
-      return muted
-    }
-
-    function drawShell(sectionLabel: string, pageNo: number) {
-      fill([255, 255, 255])
-      pdf.rect(0, 0, pageWidth, pageHeight, "F")
-      stroke(dark)
-      pdf.setLineWidth(0.35)
-      pdf.rect(margin, margin, pageWidth - margin * 2, pageHeight - margin * 2)
-      fill(purple)
-      pdf.rect(margin, margin, pageWidth - margin * 2, 2.2, "F")
-      fill(red)
-      pdf.rect(pageWidth - margin - 38, margin, 38, 2.2, "F")
-
-      pdf.addImage(IMF_LOGO_DATA_URL, "PNG", contentX, margin + 6, 52, 11.6)
-      text(sectionLabel, pageWidth / 2, margin + 12, {
-        size: 14,
-        bold: true,
-        align: "center",
-      })
-      stroke(dark)
-      pdf.line(pageWidth / 2 - 28, margin + 14, pageWidth / 2 + 28, margin + 14)
-      stroke(lineColor)
-      pdf.roundedRect(pageWidth - margin - 46, margin + 5, 40, 17, 2, 2)
-      text("MODEL", pageWidth - margin - 42, margin + 9, { size: 5.3, bold: true, color: muted })
-      text(product.model, pageWidth - margin - 27, margin + 18, {
-        size: 17,
-        bold: true,
-        color: purple,
-        align: "center",
-      })
-
-      text("PRISM - automatically generated datasheet", contentX, pageHeight - margin - 4, {
-        size: 5.8,
-        bold: true,
-        color: muted,
-      })
-      text(`Page ${pageNo} / 2 - Created by IMF Fluid regulation`, pageWidth - margin - 5, pageHeight - margin - 4, {
-        size: 5.8,
-        color: muted,
-        align: "right",
-      })
-    }
-
     function sectionTitle(title: string, x: number, y: number, w: number) {
       fill(purple)
-      pdf.roundedRect(x, y, w, 6, 1.5, 1.5, "F")
+      pdf.roundedRect(x, y, w, 6, 1.2, 1.2, "F")
       text(title.toUpperCase(), x + 3, y + 4.2, {
         size: 6.5,
         bold: true,
@@ -728,52 +677,27 @@ export default function PrismPage() {
       })
     }
 
-    function valueCard(label: string, value: unknown, x: number, y: number, w: number, h = 18) {
-      fill(light)
-      stroke(lineColor)
-      pdf.roundedRect(x, y, w, h, 2, 2, "FD")
-      text(label, x + 2.5, y + 4.7, {
-        size: 5.4,
-        bold: true,
-        color: muted,
-        maxWidth: w - 5,
-      })
-      text(value, x + 2.5, y + 12.8, {
-        size: 8.4,
-        bold: true,
-        color: purple,
-        maxWidth: w - 5,
-      })
-    }
-
-    function keyValue(label: string, value: unknown, x: number, y: number, w: number) {
-      text(label, x, y, { size: 5.7, bold: true, color: muted, maxWidth: 31 })
-      text(value, x + 35, y, { size: 6.4, bold: true, maxWidth: w - 37 })
+    function infoLine(label: string, value: unknown, x: number, y: number, w: number) {
+      text(label, x, y, { size: 5.8, bold: true, color: muted, maxWidth: 28 })
+      text(value, x + 31, y, { size: 6.3, bold: true, maxWidth: w - 32 })
       stroke(lineColor)
       pdf.line(x, y + 2.8, x + w, y + 2.8)
     }
 
-    function conditionCard(condition: DatasheetCondition, x: number, y: number, w: number) {
+    function metricCard(label: string, value: unknown, x: number, y: number, w: number, h = 15) {
       fill(light)
       stroke(lineColor)
-      pdf.roundedRect(x, y, w, 43, 2.5, 2.5, "FD")
-      text(`Condition #${condition.id}`, x + 3, y + 6, { size: 7, bold: true, color: purple })
-      text("Requested Flow", x + 3, y + 14, { size: 5.3, bold: true, color: muted })
-      text(`${displayValue(condition.flowNm3h)} Nm3/h`, x + w - 3, y + 14, { size: 6.5, bold: true, align: "right" })
-      text("Max admissible Flow", x + 3, y + 22, { size: 5.3, bold: true, color: muted })
-      text(`${displayValue(condition.maxAdmissibleFlow)} Nm3/h`, x + w - 3, y + 22, { size: 6.5, bold: true, align: "right" })
-      text("Utilization", x + 3, y + 30, { size: 5.3, bold: true, color: muted })
-      text(`${displayValue(condition.utilizationPercent)}%`, x + w - 3, y + 30, { size: 6.5, bold: true, align: "right" })
-      const color = statusColor(condition.capacityStatus)
-      fill([255, 255, 255])
-      stroke(color)
-      pdf.roundedRect(x + 3, y + 34, w - 6, 6, 2, 2, "FD")
-      text(condition.capacityStatus, x + w / 2, y + 38.4, {
-        size: 6,
-        bold: true,
-        align: "center",
-        color,
-      })
+      pdf.roundedRect(x, y, w, h, 1.5, 1.5, "FD")
+      text(label, x + 2.2, y + 4.2, { size: 5.4, bold: true, color: muted, maxWidth: w - 4 })
+      text(value, x + 2.2, y + 10.8, { size: 8.2, bold: true, color: purple, maxWidth: w - 4 })
+    }
+
+    function statusTextColor(status: unknown): [number, number, number] {
+      const value = displayValue(status)
+      if (value === "OK") return [22, 101, 52]
+      if (value === "Near limit") return [180, 83, 9]
+      if (value === "Exceeds") return [185, 28, 28]
+      return muted
     }
 
     function drawTable(
@@ -790,12 +714,16 @@ export default function PrismPage() {
       fill(light)
       stroke(lineColor)
       pdf.rect(x, y, w, rowH, "FD")
-      text(title, x + 2, y + 3.9, { size: 5.7, bold: true })
+      text(title, x + 2, y + 3.9, { size: 5.6, bold: true })
 
       tableConditions.forEach((condition, index) => {
         const cx = x + labelW + index * cellW
         pdf.line(cx, y, cx, y + rowH)
-        text(`#${condition.id}`, cx + cellW / 2, y + 3.9, { size: 5.6, bold: true, align: "center" })
+        text(`#${condition.id}`, cx + cellW / 2, y + 3.9, {
+          size: 5.6,
+          bold: true,
+          align: "center",
+        })
       })
 
       rows.forEach(([label, values], rowIndex) => {
@@ -806,123 +734,132 @@ export default function PrismPage() {
         values.slice(0, 5).forEach((value, index) => {
           const cx = x + labelW + index * cellW
           pdf.line(cx, ry, cx, ry + rowH)
+          const valueTextColor = label === "Status" ? statusTextColor(value) : dark
           text(value, cx + cellW / 2, ry + 3.8, {
             size: 5.2,
             bold: label === "Status",
             align: "center",
-            color: label === "Status" ? statusColor(value) : dark,
+            color: valueTextColor,
             maxWidth: cellW - 1,
           })
         })
       })
     }
 
-    drawShell("PRODUCT DATA SHEET", 1)
+    fill([255, 255, 255])
+    pdf.rect(0, 0, pageWidth, pageHeight, "F")
+    stroke(dark)
+    pdf.setLineWidth(0.35)
+    pdf.rect(margin, margin, pageWidth - margin * 2, pageHeight - margin * 2)
 
-    text("Model Code:", contentX, 37, { size: 6.3, bold: true, color: muted })
-    text(displayValue(product.newCode, "Several models possible"), contentX + 25, 37, {
-      size: 10.5,
+    pdf.addImage(IMF_LOGO_DATA_URL, "PNG", margin + 5, margin + 5, 53, 11.8)
+    text("PRODUCT DATA SHEET", pageWidth / 2, margin + 10.5, {
+      size: 15,
+      bold: true,
+      align: "center",
+    })
+    stroke(dark)
+    pdf.line(pageWidth / 2 - 31, margin + 12.5, pageWidth / 2 + 31, margin + 12.5)
+    stroke(lineColor)
+    pdf.roundedRect(pageWidth - margin - 46, margin + 4, 39, 17, 2, 2)
+    text("MODEL", pageWidth - margin - 42, margin + 8.2, { size: 5.5, bold: true, color: muted })
+    text(product.model, pageWidth - margin - 26.5, margin + 17, {
+      size: 17,
       bold: true,
       color: purple,
-      maxWidth: 140,
+      align: "center",
     })
 
-    sectionTitle("Industrial sizing validation", contentX, 47, contentW)
-    const topCardW = (contentW - 5 * 6) / 6
-    valueCard("Recommended DN", dnSizingProfile.recommendedDnLabel, contentX, 58, topCardW)
-    valueCard("Selected DN", product.dn, contentX + (topCardW + 6), 58, topCardW)
-    valueCard("Required seat", displayNumber(sizingSummary.minRequiredSeatSize, " mm"), contentX + (topCardW + 6) * 2, 58, topCardW)
-    valueCard("Required port", sizingSummary.requiredConnector.label, contentX + (topCardW + 6) * 3, 58, topCardW)
-    valueCard("MWP", product.mwp, contentX + (topCardW + 6) * 4, 58, topCardW)
-    valueCard("Setting", product.setting, contentX + (topCardW + 6) * 5, 58, topCardW)
-
-    sectionTitle("Capacity validation", contentX, 84, contentW)
-    const cardCount = Math.max(Math.min(tableConditions.length, 4), 1)
-    const validationCardW = (contentW - (cardCount - 1) * 7) / cardCount
-    tableConditions.slice(0, 4).forEach((condition, index) => {
-      conditionCard(condition, contentX + index * (validationCardW + 7), 95, validationCardW)
-    })
-    text("Capacity values are calculated from application working conditions.", contentX, 143, {
-      size: 6.1,
+    text("Model Code:", margin + 5, margin + 28, { size: 6.5, bold: true })
+    text(displayValue(product.newCode, "Several models possible"), margin + 31, margin + 28, {
+      size: 10,
       bold: true,
-      color: muted,
+      color: purple,
+      maxWidth: 120,
     })
 
-    sectionTitle("Flow to sizing to validation", contentX, 153, contentW)
-    const flowW = (contentW - 14) / 3
-    fill(light)
-    stroke(lineColor)
-    pdf.roundedRect(contentX, 164, flowW, 27, 2, 2, "FD")
-    text("1. Application working conditions", contentX + 3, 170, { size: 7, bold: true, color: purple })
-    text("Pressure, flow rate and temperature define requested normal flow and Delta P.", contentX + 3, 178, { size: 6, maxWidth: flowW - 6 })
-    fill(light)
-    stroke(lineColor)
-    pdf.roundedRect(contentX + flowW + 7, 164, flowW, 27, 2, 2, "FD")
-    text("2. Main sizing", contentX + flowW + 10, 170, { size: 7, bold: true, color: purple })
-    text(`Seat ${displayNumber(sizingSummary.minRequiredSeatSize, " mm")} and port ${sizingSummary.requiredConnector.label}; recommended DN ${dnSizingProfile.recommendedDnLabel}.`, contentX + flowW + 10, 178, { size: 6, maxWidth: flowW - 6 })
-    fill(light)
-    stroke(lineColor)
-    pdf.roundedRect(contentX + (flowW + 7) * 2, 164, flowW, 27, 2, 2, "FD")
-    text("3. Regulation / setting", contentX + (flowW + 7) * 2 + 3, 170, { size: 7, bold: true, color: purple })
-    text(`${displayValue(product.regulation)} regulation with ${displayValue(product.setting)} setting range.`, contentX + (flowW + 7) * 2 + 3, 178, { size: 6, maxWidth: flowW - 6 })
+    const contentX = margin + 5
+    const contentW = pageWidth - margin * 2 - 10
+    const colGap = 7
+    const colW = (contentW - colGap * 2) / 3
 
-    const priceY = 196
-    valueCard("Quantity", quantity, contentX, priceY, 33, 12)
-    valueCard(showDistributorPrices ? "Distributor unit price" : "Unit price", unitPrice, contentX + 40, priceY, 51, 12)
-    valueCard("Total price", totalPrice, contentX + 98, priceY, 51, 12)
-    valueCard("Distributor discount", showDistributorPrices && canViewPrices ? `${distributorDiscount}%` : "-", contentX + 156, priceY, 51, 12)
+    sectionTitle("Technical specification", contentX, 42, contentW)
+    infoLine("Fluid compatibility", selectedFluid?.name, contentX, 53, colW)
+    infoLine("Selected DN", product.dn, contentX + colW + colGap, 53, colW)
+    infoLine("Max inlet pressure", product.mwp, contentX + (colW + colGap) * 2, 53, colW)
+    infoLine("Temperature range", displayValue(product.workingTemp, `${sizingSummary.minTemperature} / ${sizingSummary.maxTemperature} C`), contentX, 62, colW)
+    infoLine("Required seat", displayNumber(sizingSummary.minRequiredSeatSize, " mm"), contentX + colW + colGap, 62, colW)
+    infoLine("Leakage rate", displayValue(product.leakageRate || product.leakageRateInternal || product.leakageRateExternal, "According to sealing"), contentX + (colW + colGap) * 2, 62, colW)
+    infoLine("Outlet pressure range", `${Math.min(...reportConditions.map((item) => item.outletPressure || 0))} / ${Math.max(...reportConditions.map((item) => item.outletPressure || 0))} bar g`, contentX, 71, colW)
+    infoLine("In & outlet port", product.port, contentX + colW + colGap, 71, colW)
+    infoLine("Recommended DN", dnSizingProfile.recommendedDnLabel, contentX + (colW + colGap) * 2, 71, colW)
 
-    pdf.addPage()
-    drawShell("TECHNICAL DETAILS", 2)
+    const blockY = 85
+    const halfW = (contentW - colGap) / 2
+    sectionTitle("Materials", contentX, blockY, halfW)
+    sectionTitle("Product features", contentX + halfW + colGap, blockY, halfW)
+    infoLine("Body", product.bodyMaterial, contentX, blockY + 13, halfW / 2 - 4)
+    infoLine("Valve insert", displayValue(product.valveInsert, "According to selected configuration"), contentX + halfW / 2 + 2, blockY + 13, halfW / 2 - 2)
+    infoLine("Sealing", product.sealing, contentX, blockY + 24, halfW / 2 - 4)
+    infoLine("Seat", displayValue(product.seat, "According to selected configuration"), contentX + halfW / 2 + 2, blockY + 24, halfW / 2 - 2)
+    infoLine("Certification", displayValue(product.certification), contentX + halfW + colGap, blockY + 13, halfW / 2 - 4)
+    infoLine("Options", displayValue(product.option), contentX + halfW + colGap + halfW / 2 + 2, blockY + 13, halfW / 2 - 2)
+    infoLine("Regulation", product.regulation, contentX + halfW + colGap, blockY + 24, halfW / 2 - 4)
+    infoLine("Setting", product.setting, contentX + halfW + colGap + halfW / 2 + 2, blockY + 24, halfW / 2 - 2)
 
-    sectionTitle("Technical specification", contentX, 37, contentW)
-    const specW = (contentW - 14) / 3
-    keyValue("Fluid compatibility", selectedFluid?.name, contentX, 49, specW)
-    keyValue("DN", product.dn, contentX + specW + 7, 49, specW)
-    keyValue("Max inlet pressure", product.mwp, contentX + (specW + 7) * 2, 49, specW)
-    keyValue("Temperature range", displayValue(product.workingTemp, `${sizingSummary.minTemperature} / ${sizingSummary.maxTemperature} C`), contentX, 60, specW)
-    keyValue("Section flow", displayNumber(sizingSummary.minRequiredSeatSize, " mm"), contentX + specW + 7, 60, specW)
-    keyValue("Leakage rate", displayValue(product.leakageRate || product.leakageRateInternal || product.leakageRateExternal, "According to sealing"), contentX + (specW + 7) * 2, 60, specW)
-    keyValue("Outlet pressure range", `${Math.min(...reportConditions.map((item) => item.outletPressure || 0))} / ${Math.max(...reportConditions.map((item) => item.outletPressure || 0))} bar g`, contentX, 71, specW)
-    keyValue("In & outlet port", product.port, contentX + specW + 7, 71, specW)
-    keyValue("Recommended DN", dnSizingProfile.recommendedDnLabel, contentX + (specW + 7) * 2, 71, specW)
-
-    sectionTitle("Materials", contentX, 88, (contentW - 7) / 2)
-    sectionTitle("Product features", contentX + (contentW + 7) / 2, 88, (contentW - 7) / 2)
-    const halfW = (contentW - 7) / 2
-    keyValue("Body", product.bodyMaterial, contentX, 100, halfW / 2 - 3)
-    keyValue("Valve insert", displayValue(product.valveInsert, "According to selected configuration"), contentX + halfW / 2 + 3, 100, halfW / 2 - 3)
-    keyValue("Sealing", product.sealing, contentX, 111, halfW / 2 - 3)
-    keyValue("Seat", displayValue(product.seat, "According to selected configuration"), contentX + halfW / 2 + 3, 111, halfW / 2 - 3)
-    keyValue("Certification", displayValue(product.certification), contentX + (contentW + 7) / 2, 100, halfW / 2 - 3)
-    keyValue("Options", displayValue(product.option), contentX + (contentW + 7) / 2 + halfW / 2 + 3, 100, halfW / 2 - 3)
-    keyValue("Regulation", product.regulation, contentX + (contentW + 7) / 2, 111, halfW / 2 - 3)
-    keyValue("Setting", product.setting, contentX + (contentW + 7) / 2 + halfW / 2 + 3, 111, halfW / 2 - 3)
+    sectionTitle("Sizing report", contentX, 124, contentW)
+    const cardW = (contentW - colGap * 5) / 6
+    metricCard("Fluid", selectedFluid?.name, contentX, 134, cardW)
+    metricCard("Density", computedFluid ? `${computedFluid.density} kg/Nm3` : "-", contentX + (cardW + colGap), 134, cardW)
+    metricCard("Required seat", displayNumber(sizingSummary.minRequiredSeatSize, " mm"), contentX + (cardW + colGap) * 2, 134, cardW)
+    metricCard("Required port", sizingSummary.requiredConnector.label, contentX + (cardW + colGap) * 3, 134, cardW)
+    metricCard("Compatible DN", dnSizingProfile.compatibleDnLabels.join(", ") || "-", contentX + (cardW + colGap) * 4, 134, cardW)
+    metricCard("Setting / regulation", `${displayValue(product.setting)} / ${displayValue(product.regulation)}`, contentX + (cardW + colGap) * 5, 134, cardW)
 
     const workingRows: [string, unknown[]][] = [
       ["Inlet Pressure (bar g)", tableConditions.map((item) => item.inletPressure)],
       ["Outlet Pressure (bar g)", tableConditions.map((item) => item.outletPressure)],
-      ["Flow Rate (g/s)", tableConditions.map((item) => item.flowRateGs)],
       ["Flow Rate (Nm3/h)", tableConditions.map((item) => item.flowNm3h)],
       ["Fluid Temperature (C)", tableConditions.map((item) => item.temperature)],
-      ["Outlet Velocity Threshold (m/s)", tableConditions.map((item) => item.gasSpeed)],
       ["Seat required (mm)", tableConditions.map((item) => item.seatSize)],
       ["Outlet bore required (mm)", tableConditions.map((item) => item.outletBore)],
     ]
 
     const capacityRows: [string, unknown[]][] = [
       ["Requested Flow (Nm3/h)", tableConditions.map((item) => item.flowNm3h)],
-      ["Max admissible Flow @ Seat (Nm3/h)", tableConditions.map((item) => item.maxFlowSeat)],
-      ["Max admissible Flow @ Port (Nm3/h)", tableConditions.map((item) => item.maxFlowPort)],
       ["Max admissible Flow (Nm3/h)", tableConditions.map((item) => item.maxAdmissibleFlow)],
       ["Utilization (%)", tableConditions.map((item) => item.utilizationPercent)],
       ["Capacity margin (%)", tableConditions.map((item) => item.capacityMarginPercent)],
       ["Status", tableConditions.map((item) => item.capacityStatus)],
-      ["Expected outlet velocity (m/s)", tableConditions.map((item) => item.expectedVelocity)],
+      ["Expected velocity (m/s)", tableConditions.map((item) => item.expectedVelocity)],
     ]
 
-    drawTable("Application working conditions", contentX, 128, contentW, 62, workingRows, 5.1)
-    drawTable("Pressure Regulator Capacity", contentX, 177, contentW, 62, capacityRows, 5.1)
+    drawTable("Application working conditions", contentX, 154, 156, 48, workingRows, 5.4)
+    drawTable("Pressure Regulator Capacity", contentX + 163, 154, contentW - 163, 50, capacityRows, 5.4)
+    text("Capacity values are calculated from application working conditions.", contentX + 163, 194.5, {
+      size: 5.6,
+      bold: true,
+      color: muted,
+      maxWidth: contentW - 165,
+    })
+
+    sectionTitle("Price summary", contentX, 184.5, 156)
+    const priceY = 193
+    metricCard("Quantity", quantity, contentX, priceY, 30, 11)
+    metricCard(showDistributorPrices ? "Distributor unit price" : "Unit price", unitPrice, contentX + 37, priceY, 44, 11)
+    metricCard("Total price", totalPrice, contentX + 88, priceY, 44, 11)
+    metricCard("Discount", showDistributorPrices && canViewPrices ? `${distributorDiscount}%` : "-", contentX + 139, priceY, 17, 11)
+
+    text("PRISM - automatically generated datasheet", margin + 5, pageHeight - margin - 3.5, {
+      size: 5.7,
+      bold: true,
+      color: muted,
+    })
+    text("Created by IMF Fluid regulation", pageWidth - margin - 5, pageHeight - margin - 3.5, {
+      size: 5.7,
+      color: muted,
+      align: "right",
+    })
 
     const safeCode = String(product.newCode || "product")
       .replace(/[^a-z0-9-_]+/gi, "-")
