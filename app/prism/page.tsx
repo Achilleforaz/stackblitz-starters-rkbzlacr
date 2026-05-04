@@ -34,6 +34,10 @@ type Condition = {
   seatSize?: number
   outletBore?: number
   deltaP?: number
+  maxFlowDeltaP?: number
+  maxFlowSeat?: number
+  maxFlowPort?: number
+  expectedVelocity?: number
 }
 
 type ClientProfile = {
@@ -761,6 +765,48 @@ export default function PrismPage() {
     box(showDistributorPrices ? "Distributor unit price" : "Unit price", unitPrice, priceX + 30, priceY + 10, 38)
     box("Total price", totalPrice, priceX + 72, priceY + 10, 38)
     box("Distributor discount", showDistributorPrices && canViewPrices ? `${distributorDiscount}%` : "-", priceX, priceY + 28, 52)
+
+
+    // Pressure regulator capacity
+    const capacityX = priceX
+    const capacityY = priceY + 48
+    const capacityW = 116
+    const capacityLabelW = 58
+    const capacityCellW = tableConditions.length > 0 ? (capacityW - capacityLabelW) / tableConditions.length : capacityW - capacityLabelW
+    const capacityRowH = 6
+
+    const capacityRows = [
+      ["Max admissible Flow with ΔP (Nm3/h)", tableConditions.map((item) => item.maxFlowDeltaP)],
+      ["Max admissible Flow @ Seat (Nm3/h)", tableConditions.map((item) => item.maxFlowSeat)],
+      ["Max admissible Flow @ Port (Nm3/h)", tableConditions.map((item) => item.maxFlowPort)],
+      ["Expected Outlet Velocity (m/s)", tableConditions.map((item) => item.expectedVelocity)],
+    ] as [string, unknown[]][]
+
+    fill(grey)
+    stroke([15, 23, 42])
+    pdf.rect(capacityX, capacityY, capacityW, capacityRowH, "FD")
+    text("Pressure Regulator Capacity", capacityX + 2, capacityY + 4.2, { size: 5.8, bold: true })
+
+    tableConditions.forEach((condition, index) => {
+      const cx = capacityX + capacityLabelW + index * capacityCellW
+      pdf.line(cx, capacityY, cx, capacityY + capacityRowH)
+      text(`#${condition.id}`, cx + capacityCellW / 2, capacityY + 4.2, { size: 5.6, bold: true, align: "center" })
+    })
+
+    capacityRows.forEach(([label, values], rowIndex) => {
+      const ry = capacityY + capacityRowH * (rowIndex + 1)
+
+      pdf.rect(capacityX, ry, capacityW, capacityRowH)
+      pdf.line(capacityX + capacityLabelW, ry, capacityX + capacityLabelW, ry + capacityRowH)
+
+      text(label, capacityX + 2, ry + 4.1, { size: 5.1 })
+
+      values.forEach((value, index) => {
+        const cx = capacityX + capacityLabelW + index * capacityCellW
+        pdf.line(cx, ry, cx, ry + capacityRowH)
+        text(value, cx + capacityCellW / 2, ry + 4.1, { size: 5.1, align: "center" })
+      })
+    })
 
     // Footer
     text("PRISM - automatically generated datasheet", margin + 4, pageHeight - margin - 4, { size: 6, bold: true, color: [100, 116, 139] })
@@ -1628,6 +1674,30 @@ function ProductDatasheet({
                 <DatasheetConditionRow label="Outlet bore required (mm)" values={reportConditions.map((item) => item.outletBore)} />
               </tbody>
             </table>
+
+            <div className="mt-4 overflow-hidden rounded-lg border border-slate-300">
+              <div className="bg-[#6c38ff] px-3 py-2 text-center text-[11px] font-bold uppercase tracking-wide text-white">
+                Pressure Regulator Capacity
+              </div>
+              <table className="datasheet-table w-full border-collapse text-[11px]">
+                <thead>
+                  <tr>
+                    <th className="border border-slate-300 bg-slate-100 p-2 text-left">Capacity data</th>
+                    {reportConditions.slice(0, 5).map((condition) => (
+                      <th key={condition.id} className="border border-slate-300 bg-slate-100 p-2">
+                        #{condition.id}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  <DatasheetConditionRow label="Max admissible Flow with ΔP (Nm3/h)" values={reportConditions.map((item) => item.maxFlowDeltaP)} />
+                  <DatasheetConditionRow label="Max admissible Flow @ Seat (Nm3/h)" values={reportConditions.map((item) => item.maxFlowSeat)} />
+                  <DatasheetConditionRow label="Max admissible Flow @ Port (Nm3/h)" values={reportConditions.map((item) => item.maxFlowPort)} />
+                  <DatasheetConditionRow label="Expected Outlet Velocity (m/s)" values={reportConditions.map((item) => item.expectedVelocity)} />
+                </tbody>
+              </table>
+            </div>
           </DatasheetSection>
 
           <DatasheetSection title="Price summary">
