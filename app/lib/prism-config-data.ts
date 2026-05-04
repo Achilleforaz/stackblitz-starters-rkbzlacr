@@ -1,4 +1,5 @@
 import { supabase } from "./supabase"
+import { getTechnicalDataByNewCode, pickTechnicalValue } from "./prism-technical-data"
 
 export type PrismConfiguration = {
   id: number
@@ -35,28 +36,61 @@ export async function getPrismConfigurations(): Promise<PrismConfiguration[]> {
     return []
   }
 
-  return (data ?? []).map((item) => ({
-    id: item.id,
-    dn: cleanValue(item.dn),
-    mwp: cleanValue(item.mwp),
-    port: cleanValue(item.port),
-    model: cleanValue(item.model),
-    bodyMaterial: cleanValue(item.body_material),
-    regulation: cleanValue(item.regulation),
-    setting: cleanValue(item.setting),
-    sealing: cleanValue(item.sealing),
-    degreasing: cleanValue(item.degreasing),
-    option: cleanValue(item.option),
-    certification: cleanValue(item.certification),
-    valveInsert: cleanValue(item.mat_valve_insert ?? item.valve_insert ?? item.material_valve_insert),
-    seat: cleanValue(item.mat_seat ?? item.seat ?? item.material_seat),
-    workingTemp: cleanValue(item.working_temp ?? item.temperature_range ?? item.working_temperature),
-    leakageRate: cleanValue(item.leakage_rate ?? item.leakage_rate_int ?? item.leakage_rate_internal),
-    leakageRateInternal: cleanValue(item.leakage_rate_int ?? item.leakage_rate_internal),
-    leakageRateExternal: cleanValue(item.leakage_rate_ext ?? item.leakage_rate_external),
-    newCode: cleanValue(item.new_code),
-    price: cleanValue(item.price),
-  }))
+  return (data ?? []).map((item) => {
+    const newCode = cleanValue(item.new_code ?? item["New Code"])
+    const technicalData = getTechnicalDataByNewCode(newCode)
+
+    return {
+      id: item.id,
+      dn: cleanValue(item.dn),
+      mwp: cleanValue(item.mwp),
+      port: cleanValue(item.port),
+      model: cleanValue(item.model),
+      bodyMaterial: cleanValue(item.body_material),
+      regulation: cleanValue(item.regulation),
+      setting: cleanValue(item.setting),
+      sealing: cleanValue(item.sealing),
+      degreasing: cleanValue(item.degreasing),
+      option: cleanValue(item.option),
+      certification: pickTechnicalValue(item.certification, item["Certification"], technicalData.certification),
+      valveInsert: pickTechnicalValue(
+        item.mat_valve_insert,
+        item.valve_insert,
+        item.material_valve_insert,
+        item["MAT. Valve Insert"],
+        technicalData.valveInsert
+      ),
+      seat: pickTechnicalValue(item.mat_seat, item.seat, item.material_seat, item["MAT. Seat"], technicalData.seat),
+      workingTemp: pickTechnicalValue(
+        item.working_temp,
+        item.temperature_range,
+        item.working_temperature,
+        item["Working Temp"],
+        technicalData.workingTemp
+      ),
+      leakageRate: pickTechnicalValue(
+        item.leakage_rate,
+        item.leakage_rate_int,
+        item.leakage_rate_internal,
+        item["Leakage Rate Int."],
+        technicalData.leakageRateInternal
+      ),
+      leakageRateInternal: pickTechnicalValue(
+        item.leakage_rate_int,
+        item.leakage_rate_internal,
+        item["Leakage Rate Int."],
+        technicalData.leakageRateInternal
+      ),
+      leakageRateExternal: pickTechnicalValue(
+        item.leakage_rate_ext,
+        item.leakage_rate_external,
+        item["Leakage Rate Ext."],
+        technicalData.leakageRateExternal
+      ),
+      newCode,
+      price: cleanValue(item.price),
+    }
+  })
 }
 
 function cleanValue(value: unknown) {
