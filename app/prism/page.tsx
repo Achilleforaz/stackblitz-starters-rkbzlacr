@@ -157,6 +157,58 @@ function filtersBeforeField(
     }
   })
 
+// ===============================
+// Pressure Regulator Capacity
+// ===============================
+const capacityY = tableY + rowH * (rows.length + 2)
+
+pdf.setFillColor(230, 230, 230)
+pdf.rect(
+  tableX,
+  capacityY,
+  labelW + cellW * Math.max(tableConditions.length, 1),
+  rowH,
+  "F"
+)
+
+text("Pressure Regulator Capacity", tableX + 2, capacityY + 4.2, {
+  size: 5.8,
+  bold: true,
+})
+
+const capacityRows = [
+  ["Max admissible Flow with ΔP", tableConditions.map((c) => c.maxFlowDeltaP)],
+  ["Max admissible Flow @ Seat", tableConditions.map((c) => c.maxFlowSeat)],
+  ["Max admissible Flow @ Port", tableConditions.map((c) => c.maxFlowPort)],
+  ["Expected Outlet Velocity (m/s)", tableConditions.map((c) => c.expectedVelocity)],
+]
+
+capacityRows.forEach(([label, values], rowIndex) => {
+  const ry = capacityY + rowH * (rowIndex + 1)
+
+  pdf.rect(
+    tableX,
+    ry,
+    labelW + cellW * Math.max(tableConditions.length, 1),
+    rowH
+  )
+
+  pdf.line(tableX + labelW, ry, tableX + labelW, ry + rowH)
+
+  text(label, tableX + 2, ry + 4.1, { size: 5.5 })
+
+  values.forEach((value, index) => {
+    const cx = tableX + labelW + index * cellW
+
+    pdf.line(cx, ry, cx, ry + rowH)
+
+    text(value, cx + cellW / 2, ry + 4.1, {
+      size: 5.4,
+      align: "center",
+    })
+  })
+})
+
   return result
 }
 
@@ -429,6 +481,12 @@ export default function PrismPage() {
         gasSpeed: sizing.gasSpeed,
         seatSize: Math.round(sizing.seatSizeMm * 10) / 10,
         outletBore: Math.round(sizing.outletBoreMm * 10) / 10,
+
+      // NEW
+      maxFlowDeltaP: Math.round(sizing.maxFlowDeltaP),
+      maxFlowSeat: Math.round(sizing.maxFlowSeat),
+      maxFlowPort: Math.round(sizing.maxFlowPort),
+      expectedVelocity: Math.round(sizing.expectedOutletVelocity),
       }
     })
 
