@@ -471,23 +471,14 @@ export default function PrismPage() {
     }
   }, [conditions, selectedFluid])
 
-  const dnSizingProfile = useMemo(() => {
-    return buildDnSizingProfile(
-      sizingSummary.minRequiredSeatSize,
-      configurations.map((item) => numberFromText(item.dn))
-    )
-  }, [configurations, sizingSummary.minRequiredSeatSize])
-
-  const technicallyCompatible = useMemo(() => {
+  const availableSizingConfigurations = useMemo(() => {
     if (!sizingApplied) return configurations
 
     return configurations.filter((item) => {
-      const dnMm = numberFromText(item.dn)
       const mwp = numberFromText(item.mwp)
       const portBoreMm = getPortBoreSizeMm(item.port)
 
       return (
-        isDnInUsefulRange(dnMm, dnSizingProfile) &&
         portBoreMm >= minRequiredOutletBoreSize &&
         mwp >= sizingSummary.maxInletPressure
       )
@@ -497,6 +488,27 @@ export default function PrismPage() {
     sizingApplied,
     minRequiredOutletBoreSize,
     sizingSummary.maxInletPressure,
+  ])
+
+  const dnSizingProfile = useMemo(() => {
+    return buildDnSizingProfile(
+      sizingSummary.minRequiredSeatSize,
+      availableSizingConfigurations.map((item) => numberFromText(item.dn))
+    )
+  }, [availableSizingConfigurations, sizingSummary.minRequiredSeatSize])
+
+  const technicallyCompatible = useMemo(() => {
+    if (!sizingApplied) return configurations
+
+    return availableSizingConfigurations.filter((item) => {
+      const dnMm = numberFromText(item.dn)
+
+      return isDnInUsefulRange(dnMm, dnSizingProfile)
+    })
+  }, [
+    configurations,
+    sizingApplied,
+    availableSizingConfigurations,
     dnSizingProfile,
   ])
 
@@ -808,13 +820,12 @@ export default function PrismPage() {
     infoLine("Setting", product.setting, contentX + halfW + colGap + halfW / 2 + 2, blockY + 24, halfW / 2 - 2)
 
     sectionTitle("Sizing report", contentX, 124, contentW)
-    const cardW = (contentW - colGap * 5) / 6
+    const cardW = (contentW - colGap * 4) / 5
     metricCard("Fluid", selectedFluid?.name, contentX, 134, cardW)
     metricCard("Density", computedFluid ? `${computedFluid.density} kg/Nm3` : "-", contentX + (cardW + colGap), 134, cardW)
     metricCard("Required seat", displayNumber(sizingSummary.minRequiredSeatSize, " mm"), contentX + (cardW + colGap) * 2, 134, cardW)
     metricCard("Required port", sizingSummary.requiredConnector.label, contentX + (cardW + colGap) * 3, 134, cardW)
-    metricCard("Compatible DN", dnSizingProfile.compatibleDnLabels.join(", ") || "-", contentX + (cardW + colGap) * 4, 134, cardW)
-    metricCard("Setting / regulation", `${displayValue(product.setting)} / ${displayValue(product.regulation)}`, contentX + (cardW + colGap) * 5, 134, cardW)
+    metricCard("Setting / regulation", `${displayValue(product.setting)} / ${displayValue(product.regulation)}`, contentX + (cardW + colGap) * 4, 134, cardW)
 
     const workingRows: [string, unknown[]][] = [
       ["Inlet Pressure (bar g)", tableConditions.map((item) => item.inletPressure)],
@@ -1267,7 +1278,7 @@ export default function PrismPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-5">
             <Result
               label="Required seat"
               value={`${sizingSummary.minRequiredSeatSize.toFixed(1)} mm`}
@@ -1283,10 +1294,6 @@ export default function PrismPage() {
               value={dnSizingProfile.recommendedDnLabel}
             />
 
-            <Result
-              label="Compatible DN"
-              value={dnSizingProfile.compatibleDnLabels.join(", ") || "-"}
-            />
 
             <Result
               label="Required MWP"
@@ -1377,7 +1384,7 @@ export default function PrismPage() {
             <div className="mb-8 rounded-2xl border border-cyan-300/25 bg-cyan-400/10 p-5 text-sm text-cyan-50">
               <p className="font-black">Recommended DN: {dnSizingProfile.recommendedDnLabel}</p>
               <p className="mt-1 text-cyan-100/80">
-                Compatible DN retained for selection: {dnSizingProfile.compatibleDnLabels.join(", ") || "-"}. Oversized DN are hidden to keep the selection close to the real seat requirement and outlet velocity check.
+                Recommendation calculated after MWP and port availability filters, then limited to DN values actually available in the remaining configurations. Oversized DN are hidden to keep the selection close to the real seat requirement and outlet velocity check.
               </p>
             </div>
           )}
@@ -1809,7 +1816,6 @@ function ProductDatasheet({
               <DatasheetLine label="Required seat size" value={displayNumber(sizingSummary.minRequiredSeatSize, " mm")} />
               <DatasheetLine label="Required port" value={displayValue(sizingSummary.requiredConnector.label)} />
               <DatasheetLine label="Recommended DN" value={dnSizingProfile.recommendedDnLabel} />
-              <DatasheetLine label="Compatible DN" value={dnSizingProfile.compatibleDnLabels.join(", ") || "-"} />
               <DatasheetLine label="Selected DN" value={displayValue(product.dn)} />
               <DatasheetLine label="Regulation / setting" value={`${displayValue(product.regulation)} / ${displayValue(product.setting)}`} />
             </div>
