@@ -1945,10 +1945,7 @@ function RangeMap({
   products: PrismConfiguration[]
   recommendedDn: string
 }) {
-  const maxMwp = Math.max(
-    1000,
-    ...products.map((product) => numberFromText(product.mwp)).filter((value) => value > 0)
-  )
+  const maxMwp = 1000
 
   const rows = Array.from(
     products.reduce((dnMap, product) => {
@@ -1987,18 +1984,15 @@ function RangeMap({
       const ports = Array.from(new Set(ranges.map((range) => range.port))).sort((a, b) => {
         return numberFromText(a) - numberFromText(b) || a.localeCompare(b)
       })
-      const maxRowMwp = Math.max(...ranges.map((range) => range.mwp), 0)
 
-      return { ...row, ranges, ports, maxRowMwp }
+      return { ...row, ranges, ports }
     })
     .filter((row) => row.ranges.length > 0)
     .sort((a, b) => b.dnValue - a.dnValue || a.modelLabel.localeCompare(b.modelLabel))
 
   if (rows.length === 0) return null
 
-  const ticks = [0, 250, 500, 750, 1000].filter((tick) => tick <= maxMwp)
-  if (!ticks.includes(maxMwp)) ticks.push(maxMwp)
-
+  const ticks = [0, 250, 500, 750, 1000]
   const rowsByDn = rows.reduce((map, row) => {
     const existing = map.get(row.dn) || []
     existing.push(row)
@@ -2006,59 +2000,69 @@ function RangeMap({
     return map
   }, new Map<string, typeof rows>())
 
+  const modelColorIndex = new Map<string, number>()
+  rows.forEach((row) => {
+    if (!modelColorIndex.has(row.modelLabel)) {
+      modelColorIndex.set(row.modelLabel, modelColorIndex.size)
+    }
+  })
+
   return (
     <div className="mb-8 rounded-[1.75rem] border border-white/10 bg-[#10112b]/88 p-5 shadow-2xl shadow-black/10">
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h3 className="text-xl font-black tracking-tight">Standard range map</h3>
           <p className="mt-1 max-w-3xl text-sm text-gray-300">
-            Standard PR models kept after sizing and filters. Horizontal scale = MWP, vertical scale = DN. One row = one PR model. Several thin bars on the same row mean several available pressure / port ranges.
+            Standard PR coverage after sizing and filters. X axis = MWP, Y axis = DN. One row = one PR model. Several segments on one row = several available pressure / port ranges.
           </p>
         </div>
-        <div className="rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-50">
+        <button
+          type="button"
+          className="rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-50"
+        >
           <span className="text-cyan-100/70">Recommended DN</span>
           <span className="ml-2 font-black">{recommendedDn}</span>
-        </div>
+        </button>
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#242643]">
-        <div className="grid grid-cols-[82px_104px_1fr_120px] border-b border-white/10 bg-[#171832] text-[10px] font-black uppercase tracking-[0.14em] text-white/60">
+        <div className="grid grid-cols-[76px_92px_1fr_88px] border-b border-white/10 bg-[#171832] text-[10px] font-black uppercase tracking-[0.14em] text-white/60">
           <div className="border-r border-white/10 px-3 py-3">DN</div>
           <div className="border-r border-white/10 px-3 py-3">Model</div>
           <div className="relative px-4 py-3">
             <div className="flex justify-between">
               {ticks.map((tick) => (
-                <span key={tick}>{tick} bar</span>
+                <span key={tick}>{tick}</span>
               ))}
             </div>
           </div>
-          <div className="border-l border-white/10 px-3 py-3">Port size</div>
+          <div className="border-l border-white/10 px-3 py-3">Port</div>
         </div>
 
-        <div className="max-h-[520px] overflow-y-auto">
+        <div>
           {Array.from(rowsByDn.entries()).map(([dn, dnRows]) => (
-            <div key={dn} className="grid grid-cols-[82px_1fr] border-b border-white/10 last:border-b-0">
-              <div className="flex items-center justify-center border-r border-white/10 bg-white/[0.035] px-3 text-center text-sm font-black text-white">
+            <div key={dn} className="grid grid-cols-[76px_1fr] border-b border-white/10 last:border-b-0">
+              <div className="flex items-center justify-center border-r border-white/10 bg-white/[0.035] px-2 text-center text-sm font-black text-white">
                 {dn}
               </div>
               <div>
                 {dnRows.map((row, rowIndex) => {
-                  const laneCount = Math.max(1, Math.min(row.ranges.length, 6))
-                  const hiddenRangeCount = Math.max(0, row.ranges.length - laneCount)
-                  const visibleRanges = row.ranges.slice(0, laneCount)
-                  const rowHeight = Math.max(58, 34 + laneCount * 10)
+                  const colorIndex = modelColorIndex.get(row.modelLabel) || 0
+                  const accentClass = rangeAccentClasses[colorIndex % rangeAccentClasses.length]
+                  const laneCount = Math.max(1, row.ranges.length)
+                  const rowHeight = Math.max(42, 26 + laneCount * 7)
 
                   return (
                     <div
                       key={row.key}
-                      className={`grid grid-cols-[104px_1fr_120px] ${rowIndex > 0 ? "border-t border-white/10" : ""}`}
+                      className={`grid grid-cols-[92px_1fr_88px] ${rowIndex > 0 ? "border-t border-white/10" : ""}`}
                       style={{ minHeight: rowHeight }}
                     >
-                      <div className="flex items-center border-r border-white/10 px-3 py-3 text-sm font-black text-cyan-50">
+                      <div className="flex items-center border-r border-white/10 px-3 py-2 text-sm font-black text-cyan-50">
                         {row.modelLabel}
                       </div>
 
-                      <div className="relative px-4 py-3">
+                      <div className="relative px-4 py-2">
                         {ticks.slice(1, -1).map((tick) => (
                           <div
                             key={tick}
@@ -2067,11 +2071,10 @@ function RangeMap({
                           />
                         ))}
 
-                        <div className="relative h-full min-h-[34px]">
-                          {visibleRanges.map((range, index) => {
-                            const width = `${Math.max(5, (range.mwp / maxMwp) * 100)}%`
-                            const accentClass = rangeAccentClasses[index % rangeAccentClasses.length]
-                            const top = 5 + index * 10
+                        <div className="relative h-full min-h-[28px]">
+                          {row.ranges.map((range, index) => {
+                            const width = `${Math.max(3, Math.min(100, (range.mwp / maxMwp) * 100))}%`
+                            const top = 4 + index * 7
 
                             return (
                               <div
@@ -2079,39 +2082,29 @@ function RangeMap({
                                 className="absolute left-0 right-0"
                                 style={{ top }}
                               >
-                                <div className="flex items-center">
-                                  <div
-                                    className={`h-2.5 rounded-full border ${accentClass}`}
-                                    style={{ width }}
-                                    title={`${row.modelLabel} · DN ${row.dn} · ${range.mwp} bar · ${range.port}`}
-                                  />
-                                  <span className="ml-2 whitespace-nowrap text-[10px] font-black text-white/70">
-                                    {range.mwp} bar
-                                  </span>
-                                </div>
+                                <div
+                                  className={`h-1.5 rounded-full border ${accentClass}`}
+                                  style={{ width }}
+                                  title={`${row.modelLabel} · DN ${row.dn} · MWP ${range.mwp} bar · Port ${range.port}`}
+                                />
                               </div>
                             )
                           })}
-
-                          {hiddenRangeCount > 0 && (
-                            <div className="absolute bottom-0 left-0 rounded-full border border-white/10 bg-white/[0.08] px-2 py-0.5 text-[10px] font-bold text-white/60">
-                              +{hiddenRangeCount} other range{hiddenRangeCount > 1 ? "s" : ""}
-                            </div>
-                          )}
                         </div>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-1.5 border-l border-white/10 px-3 py-3">
-                        {row.ports.slice(0, 4).map((port) => (
+                      <div className="flex flex-wrap items-center gap-1 border-l border-white/10 px-2 py-2">
+                        {row.ports.slice(0, 3).map((port) => (
                           <span
                             key={`${row.key}-${port}`}
-                            className="rounded-full border border-white/10 bg-white/[0.06] px-2 py-0.5 text-[10px] font-bold text-white/70"
+                            className="rounded-full border border-white/10 bg-white/[0.055] px-1.5 py-0.5 text-[10px] font-bold text-white/65"
+                            title={`Port ${port}`}
                           >
                             {port}
                           </span>
                         ))}
-                        {row.ports.length > 4 && (
-                          <span className="text-[10px] font-bold text-white/45">+{row.ports.length - 4}</span>
+                        {row.ports.length > 3 && (
+                          <span className="text-[10px] font-bold text-white/45">+{row.ports.length - 3}</span>
                         )}
                       </div>
                     </div>
@@ -2123,10 +2116,8 @@ function RangeMap({
         </div>
       </div>
 
-      <div className="mt-4 grid gap-2 text-xs text-gray-400 md:grid-cols-3">
-        <p>Only PR model, DN, MWP range and port size are displayed here.</p>
-        <p>The map shrinks when sizing or filters remove incompatible standard products.</p>
-        <p>Exact article reference, material and options remain hidden until final selection.</p>
+      <div className="mt-3 text-xs text-gray-400">
+        Exact article references, material and options remain hidden until final selection. Hover a segment to see its MWP and port.
       </div>
     </div>
   )
