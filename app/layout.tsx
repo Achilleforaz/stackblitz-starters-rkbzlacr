@@ -8,10 +8,9 @@ export const metadata: Metadata = {
   title: "PRISM",
   description: "Plateforme PRISM",
   icons: {
-    icon: "/prism.ico",
-    shortcut: "/prism.ico",
-    apple: "/prism.ico",
+    icon: "/favicon.ico",
   },
+};
   openGraph: {
     title: "PRISM",
     description: "Plateforme PRISM",
