@@ -14,6 +14,12 @@ export type PrismConfiguration = {
   option: string
   newCode: string
   price: string
+  certification?: string
+  valveInsert?: string
+  seatMaterial?: string
+  workingTemp?: string
+  leakageRateInternal?: string
+  leakageRateExternal?: string
 }
 
 export async function getPrismConfigurations(): Promise<PrismConfiguration[]> {
@@ -42,6 +48,12 @@ export async function getPrismConfigurations(): Promise<PrismConfiguration[]> {
     option: cleanValue(item.option),
     newCode: cleanValue(item.new_code),
     price: cleanValue(item.price),
+    certification: cleanValue(item.certification),
+    valveInsert: cleanValue(item.mat_valve_insert ?? item.valve_insert ?? item.valve_insert_material),
+    seatMaterial: cleanValue(item.mat_seat ?? item.seat ?? item.seat_material),
+    workingTemp: cleanValue(item.working_temp ?? item.working_temperature),
+    leakageRateInternal: cleanValue(item.leakage_rate_int ?? item.leakage_rate_internal),
+    leakageRateExternal: cleanValue(item.leakage_rate_ext ?? item.leakage_rate_external),
   }))
 }
 
