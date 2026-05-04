@@ -46,6 +46,34 @@ function normalizeProduct(item: any, canViewPrices: boolean) {
     option: clean(item.option),
     newCode: clean(item.new_code),
     price: canViewPrices ? clean(item.price) : "",
+    certification: clean(item.certification ?? item.certifications),
+    valveInsert: clean(
+      item.mat_valve_insert ??
+        item.valve_insert ??
+        item.valve_insert_material ??
+        item.mat_valveinsert
+    ),
+    seatMaterial: clean(
+      item.mat_seat ??
+        item.seat ??
+        item.seat_material ??
+        item.seat_mat
+    ),
+    workingTemp: clean(
+      item.working_temp ??
+        item.working_temperature ??
+        item.temperature_range
+    ),
+    leakageRateInternal: clean(
+      item.leakage_rate_int ??
+        item.leakage_rate_internal ??
+        item.internal_leakage_rate
+    ),
+    leakageRateExternal: clean(
+      item.leakage_rate_ext ??
+        item.leakage_rate_external ??
+        item.external_leakage_rate
+    ),
   }
 }
 
