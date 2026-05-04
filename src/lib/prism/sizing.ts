@@ -44,18 +44,21 @@ export function computePrismSizing(
 
   const deltaP = inletPressureBarG - outletPressureBarG
 
-  const flowNm3h =
-    density > 0 ? (flowRateGs * 3.6) / density : 0
+  const flowNm3h = density > 0 ? (flowRateGs * 3.6) / density : 0
 
   const gasSpeed = getGasSpeedForOutletPressure(fluid, outletPressureBarG)
 
   let seatSizeMm = 0
 
   const isSubCritical =
-    outletPressureBarG > 0 &&
-    inletPressureBarG / outletPressureBarG < 2
+    outletPressureBarG > 0 && inletPressureBarG / outletPressureBarG < 2
 
-  if (flowNm3h > 0 && deltaP > 0) {
+  if (
+    flowNm3h > 0 &&
+    inletPressureBarG > 0 &&
+    outletPressureBarG >= 0 &&
+    deltaP > 0
+  ) {
     if (isSubCritical) {
       seatSizeMm =
         0.283 *
@@ -76,7 +79,7 @@ export function computePrismSizing(
 
   let outletBoreMm = 0
 
-  if (flowNm3h > 0 && gasSpeed > 0) {
+  if (flowNm3h > 0 && gasSpeed > 0 && outletPressureBarA > 0) {
     outletBoreMm =
       1.13 *
       Math.sqrt(
@@ -91,7 +94,7 @@ export function computePrismSizing(
   let maxFlowPort = 0
   let expectedOutletVelocity = 0
 
-  if (seatSizeMm > 0) {
+  if (seatSizeMm > 0 && density > 0 && deltaP > 0) {
     if (isSubCritical) {
       maxFlowDeltaP =
         Math.pow(
@@ -119,7 +122,7 @@ export function computePrismSizing(
 
   maxFlowSeat = maxFlowDeltaP
 
-  if (outletBoreMm > 0 && gasSpeed > 0) {
+  if (outletBoreMm > 0 && gasSpeed > 0 && outletPressureBarA > 0) {
     maxFlowPort =
       (Math.pow(outletBoreMm / 1.13, 2) *
         gasSpeed *
@@ -128,11 +131,7 @@ export function computePrismSizing(
   }
 
   if (flowNm3h > 0 && outletBoreMm > 0) {
-    const area = Math.PI * Math.pow(outletBoreMm / 1000, 2) / 4
-    expectedOutletVelocity =
-      (flowNm3h * (temperatureC + 273)) /
-      area /
-      outletPressureBarA
+    expectedOutletVelocity = gasSpeed
   }
 
   return {
@@ -146,4 +145,22 @@ export function computePrismSizing(
     maxFlowPort,
     expectedOutletVelocity,
   }
+}
+
+export function getRequiredConnector(outletBoreMm: number) {
+  const connectors = [
+    { label: '1/4"', boreMm: 6.35 },
+    { label: '3/8"', boreMm: 9.525 },
+    { label: '1/2"', boreMm: 12.7 },
+    { label: '3/4"', boreMm: 19.05 },
+    { label: '1"', boreMm: 25.4 },
+    { label: '1 1/2"', boreMm: 38.1 },
+    { label: '2"', boreMm: 50.8 },
+    { label: '3"', boreMm: 76.2 },
+  ]
+
+  return (
+    connectors.find((connector) => connector.boreMm >= outletBoreMm) ??
+    connectors[connectors.length - 1]
+  )
 }
