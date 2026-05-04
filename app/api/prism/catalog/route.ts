@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { supabaseAdmin } from "@/app/lib/supabaseAdmin"
+import { getTechnicalDataByNewCode, pickTechnicalValue } from "@/app/lib/prism-technical-data"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -32,6 +33,9 @@ function parseBoolean(value: unknown) {
 }
 
 function normalizeProduct(item: any, canViewPrices: boolean) {
+  const newCode = clean(item.new_code ?? item["New Code"])
+  const technicalData = getTechnicalDataByNewCode(newCode)
+
   return {
     id: item.id,
     dn: clean(item.dn),
@@ -44,14 +48,42 @@ function normalizeProduct(item: any, canViewPrices: boolean) {
     sealing: clean(item.sealing),
     degreasing: clean(item.degreasing),
     option: clean(item.option),
-    certification: clean(item.certification),
-    valveInsert: clean(item.mat_valve_insert ?? item.valve_insert ?? item.material_valve_insert),
-    seat: clean(item.mat_seat ?? item.seat ?? item.material_seat),
-    workingTemp: clean(item.working_temp ?? item.temperature_range ?? item.working_temperature),
-    leakageRate: clean(item.leakage_rate ?? item.leakage_rate_int ?? item.leakage_rate_internal),
-    leakageRateInternal: clean(item.leakage_rate_int ?? item.leakage_rate_internal),
-    leakageRateExternal: clean(item.leakage_rate_ext ?? item.leakage_rate_external),
-    newCode: clean(item.new_code),
+    certification: pickTechnicalValue(item.certification, item["Certification"], technicalData.certification),
+    valveInsert: pickTechnicalValue(
+      item.mat_valve_insert,
+      item.valve_insert,
+      item.material_valve_insert,
+      item["MAT. Valve Insert"],
+      technicalData.valveInsert
+    ),
+    seat: pickTechnicalValue(item.mat_seat, item.seat, item.material_seat, item["MAT. Seat"], technicalData.seat),
+    workingTemp: pickTechnicalValue(
+      item.working_temp,
+      item.temperature_range,
+      item.working_temperature,
+      item["Working Temp"],
+      technicalData.workingTemp
+    ),
+    leakageRate: pickTechnicalValue(
+      item.leakage_rate,
+      item.leakage_rate_int,
+      item.leakage_rate_internal,
+      item["Leakage Rate Int."],
+      technicalData.leakageRateInternal
+    ),
+    leakageRateInternal: pickTechnicalValue(
+      item.leakage_rate_int,
+      item.leakage_rate_internal,
+      item["Leakage Rate Int."],
+      technicalData.leakageRateInternal
+    ),
+    leakageRateExternal: pickTechnicalValue(
+      item.leakage_rate_ext,
+      item.leakage_rate_external,
+      item["Leakage Rate Ext."],
+      technicalData.leakageRateExternal
+    ),
+    newCode,
     price: canViewPrices ? clean(item.price) : "",
   }
 }
