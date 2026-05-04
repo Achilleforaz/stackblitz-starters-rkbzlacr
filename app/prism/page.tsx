@@ -132,6 +132,27 @@ const fields: { key: FilterKey; label: string; group: string }[] = [
 
 const fieldOrder = fields.map((field) => field.key)
 
+const oldCodeByNewModel: Record<string, string> = {
+  "020": "D979",
+  "023": "D475",
+  "026": "D973",
+  "038": "D249",
+  "052": "D166 / D178",
+  "065": "D484",
+  "077": "D162",
+  "100": "D291",
+  "279": "D260",
+  "475": "D290",
+}
+
+const rangeAccentClasses = [
+  "border-cyan-300/40 bg-cyan-400/20 text-cyan-50",
+  "border-violet-300/40 bg-violet-400/20 text-violet-50",
+  "border-amber-300/40 bg-amber-400/20 text-amber-50",
+  "border-emerald-300/40 bg-emerald-400/20 text-emerald-50",
+  "border-rose-300/40 bg-rose-400/20 text-rose-50",
+]
+
 function numberFromText(value: string) {
   const match = String(value).replace(",", ".").match(/[0-9.]+/)
   return match ? Number(match[0]) : 0
@@ -154,15 +175,14 @@ function getPortBoreSizeMm(port: string) {
   return 0
 }
 
-function filtersBeforeField(
+function filtersExceptField(
   filters: Partial<PrismConfiguration>,
   field: FilterKey
 ) {
   const result: Partial<PrismConfiguration> = {}
-  const fieldIndex = fieldOrder.indexOf(field)
 
-  fieldOrder.slice(0, fieldIndex).forEach((key) => {
-    if (filters[key]) {
+  fieldOrder.forEach((key) => {
+    if (key !== field && filters[key]) {
       result[key] = filters[key]
     }
   })
@@ -185,9 +205,9 @@ function buildAutoFilters(
       if (userFilters[field.key]) return
       if (combined[field.key]) return
 
-      const previousFilters = filtersBeforeField(combined, field.key)
+      const contextualFilters = filtersExceptField(combined, field.key)
       const options = uniqueValues(
-        filterConfigurations(configurations, previousFilters),
+        filterConfigurations(configurations, contextualFilters),
         field.key
       )
 
@@ -207,11 +227,37 @@ function getFieldOptions(
   filters: Partial<PrismConfiguration>,
   field: FilterKey
 ) {
-  const previousFilters = filtersBeforeField(filters, field)
+  const contextualFilters = filtersExceptField(filters, field)
   return uniqueValues(
-    filterConfigurations(configurations, previousFilters),
+    filterConfigurations(configurations, contextualFilters),
     field
   )
+}
+
+function reconcileUserFilters(
+  configurations: PrismConfiguration[],
+  filters: Partial<PrismConfiguration>,
+  protectedField?: FilterKey
+) {
+  const reconciled: Partial<PrismConfiguration> = { ...filters }
+  let changed = true
+
+  while (changed) {
+    changed = false
+
+    fieldOrder.forEach((field) => {
+      const value = reconciled[field]
+      if (!value || field === protectedField) return
+
+      const options = getFieldOptions(configurations, reconciled, field)
+      if (!options.map(String).includes(String(value))) {
+        delete reconciled[field]
+        changed = true
+      }
+    })
+  }
+
+  return reconciled
 }
 
 export default function PrismPage() {
@@ -580,12 +626,7 @@ export default function PrismPage() {
       updated[field] = value
     }
 
-    const changedFieldIndex = fieldOrder.indexOf(field)
-    fieldOrder.slice(changedFieldIndex + 1).forEach((key) => {
-      delete updated[key]
-    })
-
-    setUserFilters(updated)
+    setUserFilters(reconcileUserFilters(technicallyCompatible, updated, value ? field : undefined))
   }
 
   function clearSize() {
@@ -1325,7 +1366,7 @@ export default function PrismPage() {
               <h2 className="mt-2 text-3xl font-black tracking-tight">CONFIGURATOR</h2>
               <p className="mt-2 text-gray-300">
                 {sizingApplied
-                  ? "Sizing applied. Remaining unique values are auto-selected."
+                  ? "Sizing applied. Choose filters in any order; unavailable choices are removed automatically."
                   : "Apply sizing to filter compatible configurations."}
               </p>
             </div>
@@ -1384,9 +1425,18 @@ export default function PrismPage() {
             <div className="mb-8 rounded-2xl border border-cyan-300/25 bg-cyan-400/10 p-5 text-sm text-cyan-50">
               <p className="font-black">Recommended DN: {dnSizingProfile.recommendedDnLabel}</p>
               <p className="mt-1 text-cyan-100/80">
-                Oversized DN are hidden to keep the selection close to the real seat requirement and outlet velocity check.
+                Recommendation calculated from the customer working limits, then constrained by the DN values still available after the active filters. Oversized DN are hidden to keep the choice close to the real seat requirement and outlet velocity check.
               </p>
             </div>
+          )}
+
+          {sizingApplied && (
+            <RangeMap
+              products={technicallyCompatible}
+              filteredProducts={filteredConfigurations}
+              selectedCode={selectedConfiguration?.newCode}
+              recommendedDn={dnSizingProfile.recommendedDnLabel}
+            />
           )}
 
           <FilterGroup title="Setting">
@@ -1943,6 +1993,113 @@ function DatasheetConditionRow({ label, values }: { label: string; values: unkno
         </td>
       ))}
     </tr>
+  )
+}
+
+function RangeMap({
+  products,
+  filteredProducts,
+  selectedCode,
+  recommendedDn,
+}: {
+  products: PrismConfiguration[]
+  filteredProducts: PrismConfiguration[]
+  selectedCode?: string
+  recommendedDn: string
+}) {
+  const visibleCodes = new Set(filteredProducts.map((product) => product.id))
+  const rows = Array.from(
+    products.reduce((map, product) => {
+      const dn = product.dn || "-"
+      const list = map.get(dn) || []
+      list.push(product)
+      map.set(dn, list)
+      return map
+    }, new Map<string, PrismConfiguration[]>())
+  )
+    .map(([dn, list]) => ({
+      dn,
+      dnValue: numberFromText(dn),
+      products: list
+        .slice()
+        .sort((a, b) => numberFromText(a.mwp) - numberFromText(b.mwp)),
+    }))
+    .sort((a, b) => b.dnValue - a.dnValue)
+
+  if (rows.length === 0) return null
+
+  return (
+    <div className="mb-8 rounded-[1.75rem] border border-white/10 bg-[#10112b]/82 p-5 shadow-2xl shadow-black/10">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-xl font-black tracking-tight">Standard range map</h3>
+          <p className="mt-1 max-w-3xl text-sm text-gray-300">
+            Visual range constrained by the calculated customer limits and your active filters. Select any filter first; the map and dropdowns update together.
+          </p>
+        </div>
+        <div className="rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-50">
+          <span className="text-cyan-100/70">Recommended DN</span>
+          <span className="ml-2 font-black">{recommendedDn}</span>
+        </div>
+      </div>
+
+      <div className="mb-3 grid grid-cols-[72px_1fr] gap-3 text-xs font-black uppercase tracking-[0.14em] text-white/48">
+        <span>DN</span>
+        <div className="flex justify-between">
+          <span>0 bar</span>
+          <span>MWP range</span>
+          <span>1000 bar</span>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {rows.map((row) => (
+          <div key={row.dn} className="grid grid-cols-[72px_1fr] items-center gap-3">
+            <div className="text-sm font-black text-white">{row.dn}</div>
+            <div className="relative min-h-[54px] rounded-2xl border border-white/10 bg-white/[0.045] p-2">
+              <div className="pointer-events-none absolute inset-y-2 left-1/4 w-px bg-white/10" />
+              <div className="pointer-events-none absolute inset-y-2 left-1/2 w-px bg-white/10" />
+              <div className="pointer-events-none absolute inset-y-2 left-3/4 w-px bg-white/10" />
+
+              <div className="space-y-2">
+                {row.products.map((product, index) => {
+                  const mwp = Math.min(Math.max(numberFromText(product.mwp), 40), 1000)
+                  const width = `${Math.max(12, (mwp / 1000) * 100)}%`
+                  const isVisible = visibleCodes.has(product.id)
+                  const isSelected = selectedCode === product.newCode
+                  const oldCode = oldCodeByNewModel[String(product.model || "").padStart(3, "0")]
+                  const accentClass = rangeAccentClasses[index % rangeAccentClasses.length]
+
+                  return (
+                    <div
+                      key={product.id}
+                      className={`relative overflow-hidden rounded-xl border px-3 py-2 text-xs font-bold transition ${accentClass} ${
+                        isVisible ? "opacity-100" : "opacity-30 grayscale"
+                      } ${isSelected ? "ring-2 ring-white/70" : ""}`}
+                      style={{ width }}
+                      title={`${product.newCode} · ${product.mwp} · ${product.port}`}
+                    >
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="font-black">{product.newCode}</span>
+                        {oldCode && <span className="text-white/65">old {oldCode}</span>}
+                        <span className="text-white/75">{product.bodyMaterial}</span>
+                        <span className="text-white/75">{product.regulation}</span>
+                        <span className="text-white/75">{product.port}</span>
+                        <span className="ml-auto text-white/85">{product.mwp}</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <p className="mt-4 text-xs text-gray-400">
+        Old references are displayed only as correspondence labels; product filtering remains based on the current PRISM catalog data.
+      </p>
+    </div>
   )
 }
 
