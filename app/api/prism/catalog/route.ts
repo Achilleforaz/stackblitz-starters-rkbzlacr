@@ -10,26 +10,6 @@ type AccessContext = {
   isDistributor: boolean
   email: string | null
   role: string | null
-  client: any | null
-  admin: any | null
-  debug: Record<string, any>
-}
-
-type DistributorDiscountSettings = {
-  id: string
-  product_id: number
-  base_discount_percent?: number | null
-  default_discount_percent?: number | null
-  default_distributor_discount_percent?: number | null
-  discount_percent?: number | null
-}
-
-type DistributorDiscountRange = {
-  id: string
-  product_id: number
-  min_volume: number
-  max_volume: number | null
-  discount_percent: number
 }
 
 function clean(value: unknown) {
@@ -75,16 +55,8 @@ function normalizeClient(client: any) {
   return {
     ...client,
     email: cleanEmail(client.email),
-    can_view_prices: parseBoolean(
-      client.can_view_prices ??
-        client.canViewPrices ??
-        client.can_view_price ??
-        client.price_enabled ??
-        client.prices_enabled
-    ),
-    is_distributor: parseBoolean(
-      client.is_distributor ?? client.isDistributor ?? client.distributor
-    ),
+    can_view_prices: parseBoolean(client.can_view_prices),
+    is_distributor: parseBoolean(client.is_distributor),
     is_active:
       client.is_active === false || clean(client.is_active).toLowerCase() === "false"
         ? false
@@ -97,80 +69,6 @@ function pickActive(rows: any[] | null | undefined) {
   return rows.find((row: any) => row.is_active !== false) || rows[0]
 }
 
-async function findActiveAdmin(email: string, debug: Record<string, any>) {
-  const adminExact = await supabaseAdmin
-    .from("admin_users")
-    .select("*")
-    .ilike("email", email)
-    .limit(20)
-
-  debug.adminExactError = adminExact.error?.message || null
-  debug.adminExactCount = adminExact.data?.length || 0
-
-  return pickActive(adminExact.data)
-}
-
-async function findActiveClient(user: any, debug: Record<string, any>) {
-  const email = cleanEmail(user.email)
-  const userId = String(user.id || "")
-
-  debug.authUserId = userId
-  debug.authEmail = email
-
-  const exact = await supabaseAdmin
-    .from("client_users")
-    .select("*")
-    .ilike("email", email)
-    .limit(20)
-
-  debug.clientExactError = exact.error?.message || null
-  debug.clientExactCount = exact.data?.length || 0
-
-  const exactPick = pickActive(exact.data)
-  if (exactPick) return exactPick
-
-  const contains = await supabaseAdmin
-    .from("client_users")
-    .select("*")
-    .ilike("email", `%${email}%`)
-    .limit(20)
-
-  debug.clientContainsError = contains.error?.message || null
-  debug.clientContainsCount = contains.data?.length || 0
-
-  const containsPick = pickActive(contains.data)
-  if (containsPick) return containsPick
-
-  const allClients = await supabaseAdmin
-    .from("client_users")
-    .select("*")
-    .range(0, 4999)
-
-  debug.clientAllError = allClients.error?.message || null
-  debug.clientAllCount = allClients.data?.length || 0
-  debug.clientSampleEmails = Array.isArray(allClients.data)
-    ? allClients.data.slice(0, 20).map((row: any) => clean(row.email))
-    : []
-
-  if (Array.isArray(allClients.data)) {
-    const matches = allClients.data.filter((row: any) => {
-      return (
-        cleanEmail(row.email) === email ||
-        String(row.auth_user_id || "") === userId ||
-        String(row.user_id || "") === userId ||
-        String(row.id || "") === userId
-      )
-    })
-
-    debug.clientJsMatchCount = matches.length
-
-    const jsPick = pickActive(matches)
-    if (jsPick) return jsPick
-  }
-
-  return null
-}
-
 async function getAccessContext(request: Request): Promise<AccessContext> {
   const empty: AccessContext = {
     canViewPrices: false,
@@ -178,45 +76,34 @@ async function getAccessContext(request: Request): Promise<AccessContext> {
     isDistributor: false,
     email: null,
     role: null,
-    client: null,
-    admin: null,
-    debug: {},
   }
 
   const authHeader = request.headers.get("authorization")
 
   if (!authHeader?.startsWith("Bearer ")) {
-    return {
-      ...empty,
-      debug: {
-        reason: "missing_authorization_header",
-      },
-    }
+    return empty
   }
 
   const token = authHeader.replace("Bearer ", "").trim()
 
   const {
     data: { user },
-    error: userError,
+    error,
   } = await supabaseAdmin.auth.getUser(token)
 
-  if (userError || !user?.email) {
-    return {
-      ...empty,
-      debug: {
-        reason: "invalid_token_or_no_email",
-        userError: userError?.message || null,
-      },
-    }
+  if (error || !user?.email) {
+    return empty
   }
 
   const email = cleanEmail(user.email)
-  const debug: Record<string, any> = {
-    authEmail: email,
-  }
 
-  const adminProfile = await findActiveAdmin(email, debug)
+  const adminResult = await supabaseAdmin
+    .from("admin_users")
+    .select("*")
+    .ilike("email", email)
+    .limit(20)
+
+  const adminProfile = pickActive(adminResult.data)
 
   if (adminProfile && adminProfile.is_active !== false) {
     return {
@@ -225,27 +112,19 @@ async function getAccessContext(request: Request): Promise<AccessContext> {
       isDistributor: false,
       email,
       role: adminProfile.role || "admin",
-      client: null,
-      admin: adminProfile,
-      debug,
     }
   }
 
-  const rawClientProfile = await findActiveClient(user, debug)
-  const clientProfile = normalizeClient(rawClientProfile)
+  const clientResult = await supabaseAdmin
+    .from("client_users")
+    .select("*")
+    .ilike("email", email)
+    .limit(20)
 
-  debug.clientFound = Boolean(clientProfile)
-
-  if (clientProfile) {
-    debug.clientId = clientProfile.id || null
-    debug.clientEmail = clientProfile.email || null
-    debug.clientCanViewPrices = clientProfile.can_view_prices
-    debug.clientIsDistributor = clientProfile.is_distributor
-    debug.clientIsActive = clientProfile.is_active
-  }
+  const clientProfile = normalizeClient(pickActive(clientResult.data))
 
   if (!clientProfile || clientProfile.is_active === false) {
-    return { ...empty, email, debug }
+    return empty
   }
 
   const isDistributor = parseBoolean(clientProfile.is_distributor)
@@ -257,13 +136,12 @@ async function getAccessContext(request: Request): Promise<AccessContext> {
     isDistributor,
     email,
     role: null,
-    client: clientProfile,
-    admin: null,
-    debug,
   }
 }
 
-async function getDistributorDiscounts() {
+async function getDistributorDiscounts(canViewPrices: boolean) {
+  if (!canViewPrices) return {}
+
   const [settingsResult, rangesResult] = await Promise.all([
     supabaseAdmin.from("product_distributor_discount_settings").select("*"),
     supabaseAdmin
@@ -272,14 +150,12 @@ async function getDistributorDiscounts() {
       .order("min_volume"),
   ])
 
-  const settings = (settingsResult.data || []) as DistributorDiscountSettings[]
-  const ranges = (rangesResult.data || []) as DistributorDiscountRange[]
-  const map: Record<
-    number,
-    { defaultDiscount: number; ranges: DistributorDiscountRange[] }
-  > = {}
+  const settings = settingsResult.data || []
+  const ranges = rangesResult.data || []
 
-  settings.forEach((item) => {
+  const map: Record<number, any> = {}
+
+  settings.forEach((item: any) => {
     map[Number(item.product_id)] = {
       defaultDiscount: Number(
         item.base_discount_percent ??
@@ -292,7 +168,7 @@ async function getDistributorDiscounts() {
     }
   })
 
-  ranges.forEach((range) => {
+  ranges.forEach((range: any) => {
     const productId = Number(range.product_id)
 
     if (!map[productId]) {
@@ -303,18 +179,12 @@ async function getDistributorDiscounts() {
     }
 
     map[productId].ranges.push({
-      ...range,
+      id: range.id,
       product_id: productId,
       min_volume: Number(range.min_volume),
       max_volume: range.max_volume === null ? null : Number(range.max_volume),
       discount_percent: Number(range.discount_percent || 0),
     })
-  })
-
-  Object.keys(map).forEach((productId) => {
-    map[Number(productId)].ranges.sort(
-      (a, b) => Number(a.min_volume) - Number(b.min_volume)
-    )
   })
 
   return map
@@ -323,27 +193,20 @@ async function getDistributorDiscounts() {
 export async function GET(request: Request) {
   const accessContext = await getAccessContext(request)
 
-  console.log("PRISM ACCESS DEBUG", JSON.stringify({
-    email: accessContext.email,
-    canViewPrices: accessContext.canViewPrices,
-    isAdmin: accessContext.isAdmin,
-    isDistributor: accessContext.isDistributor,
-    clientFound: Boolean(accessContext.client),
-    adminFound: Boolean(accessContext.admin),
-    debug: accessContext.debug,
-  }, null, 2))
-
   const [{ data, error }, distributorDiscounts] = await Promise.all([
     supabaseAdmin
       .from("prism_configurations")
       .select("*")
       .eq("is_hidden", false)
       .order("model"),
-    getDistributorDiscounts(),
+    getDistributorDiscounts(accessContext.canViewPrices),
   ])
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 })
+    return NextResponse.json(
+      { error: "Unable to load catalog" },
+      { status: 400 }
+    )
   }
 
   return NextResponse.json(
@@ -358,7 +221,6 @@ export async function GET(request: Request) {
         isDistributor: accessContext.isDistributor,
         email: accessContext.email,
         role: accessContext.role,
-        debug: accessContext.debug,
       },
       canViewPrices: accessContext.canViewPrices,
     },
