@@ -1924,6 +1924,20 @@ function DatasheetConditionRow({ label, values }: { label: string; values: unkno
   )
 }
 
+function getModelDisplayLabel(product: PrismConfiguration) {
+  const model = String(product.model || "").trim()
+  if (model) return model.toUpperCase().startsWith("PR") ? model.toUpperCase() : `PR${model}`
+
+  const code = String(product.newCode || "").trim()
+  const match = code.match(/PR\s*([0-9]{2,4})/i)
+  return match ? `PR${match[1]}` : "PR-"
+}
+
+function getPortDisplayLabel(port: string) {
+  const value = String(port || "").trim()
+  return value || "Port -"
+}
+
 function RangeMap({
   products,
   recommendedDn,
@@ -1931,25 +1945,52 @@ function RangeMap({
   products: PrismConfiguration[]
   recommendedDn: string
 }) {
-  const rows = Array.from(
-    products.reduce((map, product) => {
-      const dn = product.dn || "-"
-      const list = map.get(dn) || []
-      list.push(product)
-      map.set(dn, list)
-      return map
-    }, new Map<string, PrismConfiguration[]>())
+  const maxMwp = Math.max(
+    1000,
+    ...products.map((product) => numberFromText(product.mwp)).filter((value) => value > 0)
   )
-    .map(([dn, list]) => ({
-      dn,
-      dnValue: numberFromText(dn),
-      products: list
-        .slice()
-        .sort((a, b) => numberFromText(a.mwp) - numberFromText(b.mwp)),
-    }))
-    .sort((a, b) => b.dnValue - a.dnValue)
+
+  const rows = Array.from(
+    products.reduce((dnMap, product) => {
+      const dn = product.dn || "-"
+      const modelLabel = getModelDisplayLabel(product)
+      const rowKey = `${dn}__${modelLabel}`
+      const existing = dnMap.get(rowKey) || {
+        key: rowKey,
+        dn,
+        dnValue: numberFromText(dn),
+        modelLabel,
+        products: [] as PrismConfiguration[],
+      }
+
+      existing.products.push(product)
+      dnMap.set(rowKey, existing)
+      return dnMap
+    }, new Map<string, { key: string; dn: string; dnValue: number; modelLabel: string; products: PrismConfiguration[] }>())
+  )
+    .map(([, row]) => {
+      const ranges = Array.from(
+        row.products.reduce((rangeMap, product) => {
+          const mwp = numberFromText(product.mwp)
+          const port = getPortDisplayLabel(product.port)
+          const key = `${mwp}__${port}`
+          const current = rangeMap.get(key) || { key, mwp, port, count: 0 }
+          current.count += 1
+          rangeMap.set(key, current)
+          return rangeMap
+        }, new Map<string, { key: string; mwp: number; port: string; count: number }>())
+      )
+        .map(([, range]) => range)
+        .sort((a, b) => a.mwp - b.mwp || a.port.localeCompare(b.port))
+
+      return { ...row, ranges }
+    })
+    .sort((a, b) => b.dnValue - a.dnValue || a.modelLabel.localeCompare(b.modelLabel))
 
   if (rows.length === 0) return null
+
+  const ticks = [0, 250, 500, 750, 1000].filter((tick) => tick <= maxMwp)
+  if (!ticks.includes(maxMwp)) ticks.push(maxMwp)
 
   return (
     <div className="mb-8 rounded-[1.75rem] border border-white/10 bg-[#10112b]/82 p-5 shadow-2xl shadow-black/10">
@@ -1957,7 +1998,7 @@ function RangeMap({
         <div>
           <h3 className="text-xl font-black tracking-tight">Standard range map</h3>
           <p className="mt-1 max-w-3xl text-sm text-gray-300">
-            Visual map of the currently available standard range. It updates immediately with sizing and with each configurator choice.
+            Visual map of the standard PR range available with the current sizing and filters. X = MWP, Y = DN. Each line is one PR model; several bars on one line mean several pressure/port ranges for the same model.
           </p>
         </div>
         <div className="rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-50">
@@ -1966,62 +2007,67 @@ function RangeMap({
         </div>
       </div>
 
-      <div className="mb-3 grid grid-cols-[64px_1fr] gap-3 text-[11px] font-black uppercase tracking-[0.14em] text-white/48">
-        <span>DN</span>
-        <div className="flex justify-between">
-          <span>0 bar</span>
-          <span>MWP range</span>
-          <span>1000 bar</span>
+      <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.035]">
+        <div className="sticky top-0 z-10 grid grid-cols-[72px_96px_1fr] border-b border-white/10 bg-[#171832] text-[11px] font-black uppercase tracking-[0.14em] text-white/55">
+          <div className="border-r border-white/10 px-3 py-3">DN</div>
+          <div className="border-r border-white/10 px-3 py-3">Model</div>
+          <div className="relative px-3 py-3">
+            <div className="flex justify-between">
+              {ticks.map((tick) => (
+                <span key={tick}>{tick} bar</span>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="max-h-[560px] overflow-y-auto">
+          {rows.map((row) => (
+            <div key={row.key} className="grid grid-cols-[72px_96px_1fr] border-b border-white/10 last:border-b-0">
+              <div className="flex items-center border-r border-white/10 bg-white/[0.025] px-3 py-3 text-sm font-black text-white">
+                {row.dn}
+              </div>
+              <div className="flex items-center border-r border-white/10 px-3 py-3 text-sm font-black text-cyan-50">
+                {row.modelLabel}
+              </div>
+              <div className="relative min-h-[62px] px-3 py-3">
+                {ticks.slice(1, -1).map((tick) => (
+                  <div
+                    key={tick}
+                    className="pointer-events-none absolute inset-y-2 w-px bg-white/10"
+                    style={{ left: `${(tick / maxMwp) * 100}%` }}
+                  />
+                ))}
+
+                <div className="space-y-2">
+                  {row.ranges.map((range, index) => {
+                    const width = `${Math.max(7, (range.mwp / maxMwp) * 100)}%`
+                    const accentClass = rangeAccentClasses[index % rangeAccentClasses.length]
+
+                    return (
+                      <div key={range.key} className="flex items-center gap-2">
+                        <div
+                          className={`h-5 rounded-full border ${accentClass}`}
+                          style={{ width }}
+                          title={`${row.modelLabel} · DN ${row.dn} · ${range.mwp} bar · ${range.port}`}
+                        />
+                        <span className="min-w-[72px] text-[11px] font-black text-white/70">
+                          {range.mwp} bar
+                        </span>
+                        <span className="rounded-full border border-white/10 bg-white/[0.06] px-2 py-0.5 text-[10px] font-bold text-white/60">
+                          {range.port}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
-      <div className="space-y-2">
-        {rows.map((row) => (
-          <div key={row.dn} className="grid grid-cols-[64px_1fr] items-stretch gap-3">
-            <div className="flex items-center rounded-xl border border-white/10 bg-white/[0.045] px-3 text-sm font-black text-white">
-              {row.dn}
-            </div>
-            <div className="relative min-h-[58px] rounded-2xl border border-white/10 bg-white/[0.045] p-2">
-              <div className="pointer-events-none absolute inset-y-2 left-1/4 w-px bg-white/10" />
-              <div className="pointer-events-none absolute inset-y-2 left-1/2 w-px bg-white/10" />
-              <div className="pointer-events-none absolute inset-y-2 left-3/4 w-px bg-white/10" />
-
-              <div className="space-y-2">
-                {row.products.map((product, index) => {
-                  const mwp = Math.min(Math.max(numberFromText(product.mwp), 40), 1000)
-                  const width = `${Math.max(10, (mwp / 1000) * 100)}%`
-                  const accentClass = rangeAccentClasses[index % rangeAccentClasses.length]
-                  const label = [
-                    product.bodyMaterial,
-                    product.regulation,
-                    product.port,
-                    product.setting,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")
-
-                  return (
-                    <div
-                      key={product.id}
-                      className={`relative overflow-hidden rounded-xl border px-3 py-2 text-xs font-bold transition ${accentClass}`}
-                      style={{ width }}
-                      title={`${product.dn} · ${product.mwp} · ${label}`}
-                    >
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                        <span className="font-black">{label}</span>
-                        <span className="ml-auto text-white/85">{product.mwp}</span>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
       <p className="mt-4 text-xs text-gray-400">
-        Exact article references are intentionally hidden here: this map is for visual range selection only. The final article appears once one configuration remains.
+        The map intentionally shows only PR model, DN, MWP range and port size. Exact article references and material details stay hidden until the final configuration is selected.
       </p>
     </div>
   )
