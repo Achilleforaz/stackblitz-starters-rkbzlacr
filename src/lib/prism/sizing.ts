@@ -49,7 +49,10 @@ export function computePrismSizing(
   const flowNm3h =
     density > 0 ? (flowRateGs * 3.6) / density : 0
 
-  const gasSpeed = getGasSpeedForOutletPressure(fluid, outletPressureBarG)
+  const gasSpeed = getGasSpeedForOutletPressure(
+    fluid,
+    outletPressureBarG
+  )
 
   let seatSizeMm = 0
 
@@ -94,7 +97,7 @@ export function computePrismSizing(
   }
 
   // ===============================
-  // 🔥 NEW CALCULATIONS (PRISM Excel Logic)
+  // NEW CALCULATIONS
   // ===============================
 
   let maxFlowDeltaP = 0
@@ -128,10 +131,8 @@ export function computePrismSizing(
     }
   }
 
-  // Flow limited by seat (same logic as ΔP but strictly seat-driven)
   maxFlowSeat = maxFlowDeltaP
 
-  // Flow limited by port (inverse outlet bore equation)
   if (outletBoreMm > 0 && gasSpeed > 0) {
     maxFlowPort =
       (Math.pow(outletBoreMm / 1.13, 2) *
@@ -140,11 +141,13 @@ export function computePrismSizing(
       (temperatureC + 273)
   }
 
-  // Expected velocity
   if (flowNm3h > 0 && outletBoreMm > 0) {
+    const area =
+      Math.PI * Math.pow(outletBoreMm / 1000, 2) / 4
+
     expectedOutletVelocity =
       (flowNm3h * (temperatureC + 273)) /
-      (Math.pow(outletBoreMm / 1000, 2) * Math.PI / 4) /
+      area /
       outletPressureBarA
   }
 
