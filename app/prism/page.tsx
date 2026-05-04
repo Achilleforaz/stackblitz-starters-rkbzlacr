@@ -1384,7 +1384,7 @@ export default function PrismPage() {
             <div className="mb-8 rounded-2xl border border-cyan-300/25 bg-cyan-400/10 p-5 text-sm text-cyan-50">
               <p className="font-black">Recommended DN: {dnSizingProfile.recommendedDnLabel}</p>
               <p className="mt-1 text-cyan-100/80">
-                Recommendation calculated after MWP and port availability filters, then limited to DN values actually available in the remaining configurations. Oversized DN are hidden to keep the selection close to the real seat requirement and outlet velocity check.
+                Oversized DN are hidden to keep the selection close to the real seat requirement and outlet velocity check.
               </p>
             </div>
           )}
