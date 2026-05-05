@@ -689,7 +689,7 @@ export default function PrismPage() {
       maxWidth?: number
       lineHeightFactor?: number
     }
-    type DetailItem = { label: string; value: unknown; emphasis?: boolean }
+    type DetailItem = { label: string; value: unknown; emphasis?: boolean; tone?: "default" | "accent" | "success" | "warning" | "danger" }
 
     const pageWidth = pdf.internal.pageSize.getWidth()
     const pageHeight = pdf.internal.pageSize.getHeight()
@@ -775,17 +775,26 @@ export default function PrismPage() {
       pageFooter(pageNumber)
     }
 
+    function detailToneColors(tone: DetailItem["tone"] = "default"): { text: Rgb; bg: Rgb; border: Rgb; accent: Rgb } {
+      if (tone === "danger") return { text: danger, bg: dangerBg, border: [248, 113, 113], accent: danger }
+      if (tone === "warning") return { text: warning, bg: warningBg, border: [251, 191, 36], accent: warning }
+      if (tone === "success") return { text: ok, bg: okBg, border: [171, 225, 190], accent: ok }
+      if (tone === "accent") return { text: purple, bg: purpleLight, border: [207, 198, 255], accent: purple }
+      return { text: navy, bg: white, border: line, accent: purple }
+    }
+
     function itemBox(item: DetailItem, x: number, y: number, w: number, h: number) {
-      roundedPanel(x, y, w, h, white, line, 2.7)
-      if (item.emphasis) {
-        setFill(purple)
+      const tone = detailToneColors(item.tone ?? (item.emphasis ? "accent" : "default"))
+      roundedPanel(x, y, w, h, tone.bg, tone.border, 2.7)
+      if (item.emphasis || item.tone) {
+        setFill(tone.accent)
         pdf.roundedRect(x + 2.2, y + 2.2, 1.4, h - 4.4, 0.7, 0.7, "F")
       }
       write(item.label, x + 4.5, y + 4.8, { size: 5.5, bold: true, color: muted, maxWidth: w - 8 })
       write(item.value, x + 4.5, y + 11.2, {
         size: 7,
         bold: true,
-        color: item.emphasis ? purple : navy,
+        color: item.emphasis || item.tone ? tone.text : navy,
         maxWidth: w - 8,
         lineHeightFactor: 1.12,
       })
@@ -819,7 +828,12 @@ export default function PrismPage() {
 
     function formatTemperatureRange(value: unknown) {
       const text = displayValue(value)
-      return text.replace(/\bdeg\s*C\b/gi, "°C").replace(/\s*C$/i, "°C")
+      if (!text || text === "-") return text
+      const normalized = text
+        .replace(/deg\s*C/gi, "°C")
+        .replace(/°+C/gi, "°C")
+      if (/°C/i.test(normalized)) return normalized.replace(/°c/gi, "°C")
+      return normalized.replace(/\s*C$/i, "°C")
     }
 
     function formatLeakageRate(value: unknown) {
@@ -973,21 +987,30 @@ export default function PrismPage() {
       const tones = tableConditions.map((item) => statusTone(item.capacityStatus))
       const hasExceed = tones.includes("danger")
       const hasWarning = tones.includes("warning")
-      const colors = statusColors(hasExceed ? "danger" : hasWarning ? "warning" : "ok")
+      const hasFluidIssue = fluidCompatibilitySummary.selectedFluidStatus === "Not compatible"
+      const hasFluidWarning = fluidCompatibilitySummary.selectedFluidStatus === "Acceptable" || fluidCompatibilitySummary.selectedFluidStatus === "To be confirmed"
+      const finalTone: StatusTone = hasExceed || hasFluidIssue ? "danger" : hasWarning || hasFluidWarning ? "warning" : "ok"
+      const colors = statusColors(finalTone)
       const { highestUtilization, minimumMargin } = sizingExtremeValues()
-      const resultLabel = hasExceed ? "TO REVIEW" : hasWarning ? "WARNING" : "VALIDATED"
-      const title = hasExceed
-        ? "Configuration exceeds at least one operating limit"
-        : hasWarning
-          ? "Configuration is close to an operating limit"
-          : "Configuration is within safe operating limits"
-      const body = hasExceed
-        ? "Review requested flow, pressure drop, seat size or outlet port before customer release."
-        : hasWarning
-          ? "Sizing is usable with reduced margin. Check the highlighted working condition before release."
-          : "The selected pressure regulator is suitable for the requested operating conditions."
+      const resultLabel = finalTone === "danger" ? "TO REVIEW" : finalTone === "warning" ? "WARNING" : "VALIDATED"
+      const title = hasFluidIssue
+        ? "Selected fluid is not compatible with selected wetted materials"
+        : hasExceed
+          ? "Configuration exceeds at least one operating limit"
+          : hasWarning || hasFluidWarning
+            ? "Configuration requires technical review"
+            : "Configuration is within safe operating limits"
+      const body = hasFluidIssue
+        ? "Capacity sizing may be acceptable, but material compatibility must be corrected before customer release."
+        : hasExceed
+          ? "Review requested flow, pressure drop, seat size or outlet port before customer release."
+          : hasWarning
+            ? "Sizing is usable with reduced margin. Check the highlighted working condition before release."
+            : hasFluidWarning
+              ? "Selected fluid compatibility is acceptable or to be confirmed with selected wetted materials."
+              : "The selected pressure regulator is suitable for the requested operating conditions."
       roundedPanel(x, y, w, 23, colors.bg, colors.border, 3)
-      write("SIZING RESULT", x + 5, y + 6.2, { size: 5.8, bold: true, color: muted })
+      write("CONFIGURATION RESULT", x + 5, y + 6.2, { size: 5.8, bold: true, color: muted })
       write(resultLabel, x + 5, y + 14.5, { size: 13, bold: true, color: colors.text })
       write(title, x + 47, y + 7.5, { size: 7.2, bold: true, color: colors.text, maxWidth: w - 53 })
       write(body, x + 47, y + 13, { size: 5.8, color: slate, maxWidth: w - 53 })
@@ -1060,7 +1083,6 @@ export default function PrismPage() {
     const sketchW = contentW - technicalLeftW - 7
     grid([
       { label: "DN", value: product.dn },
-      { label: "Recommended DN", value: dnSizingProfile.recommendedDnLabel, emphasis: true },
       { label: "Max inlet pressure", value: product.mwp },
       { label: "Temperature range", value: formatTemperatureRange(displayValue(product.workingTemp, `${sizingSummary.minTemperature} / ${sizingSummary.maxTemperature} °C`)) },
       { label: "Leakage rate", value: formatLeakageRate(product.leakageRate || product.leakageRateInternal || product.leakageRateExternal) },
@@ -1069,10 +1091,19 @@ export default function PrismPage() {
     drawProductSketch(margin + technicalLeftW + 7, 73, sketchW, 51.6)
 
     sectionTitle("Fluid compatibility", "Selection and material compatibility", margin, 132, contentW)
+    const selectedFluidTone = fluidCompatibilitySummary.selectedFluidStatus === "Compatible"
+      ? "success"
+      : fluidCompatibilitySummary.selectedFluidStatus === "Acceptable"
+        ? "warning"
+        : fluidCompatibilitySummary.selectedFluidStatus === "Not compatible"
+          ? "danger"
+          : "default"
     const fluidEndY = grid([
-      { label: "Selected fluid", value: selectedFluid?.name, emphasis: true },
+      { label: "Selected fluid", value: selectedFluid?.name, tone: selectedFluidTone },
+      { label: "Selected fluid status", value: fluidCompatibilitySummary.selectedFluidStatusLabel, tone: selectedFluidTone },
       { label: "Compatible fluids", value: fluidCompatibilitySummary.compatibleLabel.replace(/^Compatible:\s*/i, "") },
       { label: "Acceptable fluids", value: fluidCompatibilitySummary.acceptableLabel.replace(/^Acceptable:\s*/i, "") },
+      { label: "Not compatible fluids", value: fluidCompatibilitySummary.notCompatibleLabel.replace(/^Not compatible:\s*/i, ""), tone: fluidCompatibilitySummary.notCompatibleFluids.length ? "danger" : "default" },
     ], margin, 144, contentW, 3, 22, 3)
 
     const twoColGap = 6
@@ -1250,8 +1281,17 @@ export default function PrismPage() {
   const datasheetFluidCompatibilitySummary = selectedConfiguration
     ? buildFluidCompatibilitySummary(selectedConfiguration, selectedFluid)
     : {
-        compatibleLabel: `Compatible: ${displayValue(selectedFluid?.name)}`,
-        acceptableLabel: "Acceptable: to be confirmed with selected wetted materials",
+        selectedFluidName: displayValue(selectedFluid?.name),
+        selectedFluidStatus: "To be confirmed" as const,
+        selectedFluidStatusLabel: "To be confirmed with selected wetted materials",
+        compatibleFluids: [],
+        acceptableFluids: [],
+        notCompatibleFluids: [],
+        toBeConfirmedFluids: [],
+        compatibleLabel: "Compatible: None",
+        acceptableLabel: "Acceptable: None",
+        notCompatibleLabel: "Not compatible: None",
+        toBeConfirmedLabel: "To be confirmed: None",
       }
 
   return (
@@ -1836,36 +1876,137 @@ function displayNumber(value: unknown, suffix = "") {
   return `${rounded}${suffix}`
 }
 
+type FluidCompatibilityStatus = "Compatible" | "Acceptable" | "Not compatible" | "To be confirmed"
+
+type FluidCompatibilitySummary = {
+  selectedFluidName: string
+  selectedFluidStatus: FluidCompatibilityStatus
+  selectedFluidStatusLabel: string
+  compatibleFluids: string[]
+  acceptableFluids: string[]
+  notCompatibleFluids: string[]
+  toBeConfirmedFluids: string[]
+  compatibleLabel: string
+  acceptableLabel: string
+  notCompatibleLabel: string
+  toBeConfirmedLabel: string
+}
+
+const fluidCompatibilityMatrix = [
+  { key: "Air", label: "Air", values: { "Stainless Steel": 2, Brass: 2, CuproAlu: 2, FKM: 2, PCTFE: 2, VESPEL: 2, TORLON: 2, NBR: 2, "ENERGIZED PTFE": 2, PEEK: 2 } },
+  { key: "Breathable Air", label: "Air respirable", values: { "Stainless Steel": 2, Brass: 2, CuproAlu: 0, FKM: 0, PCTFE: -1, VESPEL: 0, TORLON: 0, NBR: 2, "ENERGIZED PTFE": 0, PEEK: 0 } },
+  { key: "Argon", label: "Argon", values: { "Stainless Steel": 2, Brass: 2, CuproAlu: 1, FKM: 2, PCTFE: 2, VESPEL: 0, TORLON: 0, NBR: -1, "ENERGIZED PTFE": 2, PEEK: 2 } },
+  { key: "Nitrogen", label: "Azote", values: { "Stainless Steel": 2, Brass: 2, CuproAlu: 2, FKM: 2, PCTFE: 2, VESPEL: 2, TORLON: 2, NBR: 2, "ENERGIZED PTFE": 2, PEEK: 2 } },
+  { key: "Butane", label: "Butane", values: { "Stainless Steel": 2, Brass: 2, CuproAlu: 1, FKM: 2, PCTFE: 2, VESPEL: 0, TORLON: 0, NBR: 2, "ENERGIZED PTFE": 2, PEEK: 2 } },
+  { key: "Carbon Dioxyde", label: "Dioxyde de carbone", values: { "Stainless Steel": 2, Brass: -1, CuproAlu: 1, FKM: 2, PCTFE: 2, VESPEL: 2, TORLON: 0, NBR: 2, "ENERGIZED PTFE": 2, PEEK: 0 } },
+  { key: "Natural Gas", label: "Gaz naturel", values: { "Stainless Steel": 2, Brass: 1, CuproAlu: 2, FKM: 2, PCTFE: 2, VESPEL: 0, TORLON: 0, NBR: 2, "ENERGIZED PTFE": 2, PEEK: 2 } },
+  { key: "Helium", label: "Hélium", values: { "Stainless Steel": 2, Brass: 2, CuproAlu: 2, FKM: 2, PCTFE: 2, VESPEL: 2, TORLON: 0, NBR: 2, "ENERGIZED PTFE": 2, PEEK: 2 } },
+  { key: "Hydrogen", label: "Hydrogène", values: { "Stainless Steel": 2, Brass: 2, CuproAlu: 2, FKM: 2, PCTFE: 2, VESPEL: 0, TORLON: 0, NBR: 2, "ENERGIZED PTFE": 2, PEEK: 2 } },
+  { key: "Oxygen", label: "Oxygène", values: { "Stainless Steel": 1, Brass: 2, CuproAlu: 2, FKM: 2, PCTFE: 2, VESPEL: 2, TORLON: 0, NBR: -1, "ENERGIZED PTFE": 2, PEEK: 0 } },
+] as const
+
+function normalizeCompatibilityText(value: unknown) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\u00a0/g, " ")
+    .replace(/[^a-zA-Z0-9]+/g, " ")
+    .trim()
+    .toLowerCase()
+}
+
+function normalizeWettedMaterial(value: unknown) {
+  const text = normalizeCompatibilityText(value)
+  if (!text) return ""
+  if (text.includes("stainless") || text.includes("inox")) return "Stainless Steel"
+  if (text.includes("brass") || text.includes("laiton")) return "Brass"
+  if (text.includes("cupro")) return "CuproAlu"
+  if (text.includes("fkm")) return "FKM"
+  if (text.includes("nbr")) return "NBR"
+  if (text.includes("pctfe")) return "PCTFE"
+  if (text.includes("vespel")) return "VESPEL"
+  if (text.includes("torlon")) return "TORLON"
+  if (text.includes("energ") && text.includes("ptfe")) return "ENERGIZED PTFE"
+  if (text.includes("peek")) return "PEEK"
+  return ""
+}
+
+function normalizeFluidName(value: unknown) {
+  const text = normalizeCompatibilityText(value)
+  if (!text) return ""
+  if (text.includes("air") && (text.includes("respirable") || text.includes("breathable"))) return "Breathable Air"
+  if (text === "air") return "Air"
+  if (text.includes("argon") || text === "ar") return "Argon"
+  if (text.includes("azote") || text.includes("nitrogen") || text === "n2") return "Nitrogen"
+  if (text.includes("butane")) return "Butane"
+  if (text.includes("dioxyde de carbone") || text.includes("carbon dioxyde") || text.includes("carbon dioxide") || text === "co2") return "Carbon Dioxyde"
+  if (text.includes("gaz naturel") || text.includes("natural gas")) return "Natural Gas"
+  if (text.includes("helium") || text === "he") return "Helium"
+  if (text.includes("hydrogene") || text.includes("hydrogen") || text === "h2") return "Hydrogen"
+  if (text.includes("oxygene") || text.includes("oxygen") || text === "o2") return "Oxygen"
+  return ""
+}
+
+function classifyCompatibilityScore(score: number | null): FluidCompatibilityStatus {
+  if (score === 2) return "Compatible"
+  if (score === 1) return "Acceptable"
+  if (score === -1) return "Not compatible"
+  return "To be confirmed"
+}
+
+function joinCompatibilityList(items: string[]) {
+  return items.length ? items.join(", ") : "None"
+}
+
 function buildFluidCompatibilitySummary(
   product: PrismConfiguration,
   selectedFluid: PrismFluid | null
-) {
-  const materialSignature = [
-    product.bodyMaterial,
-    product.sealing,
-    product.valveInsert,
-    product.seat,
-  ]
-    .join(" ")
-    .toLowerCase()
+): FluidCompatibilitySummary {
+  const wettedMaterials = [product.bodyMaterial, product.sealing, product.valveInsert, product.seat]
+    .map(normalizeWettedMaterial)
+    .filter(Boolean)
+
+  const compatibleFluids: string[] = []
+  const acceptableFluids: string[] = []
+  const notCompatibleFluids: string[] = []
+  const toBeConfirmedFluids: string[] = []
+  const statusByFluidKey = new Map<string, FluidCompatibilityStatus>()
+
+  fluidCompatibilityMatrix.forEach((fluid) => {
+    const scores = wettedMaterials.map((material) => fluid.values[material as keyof typeof fluid.values])
+    const validScores = scores.filter((score): score is number => Number.isFinite(score))
+    const worstScore = validScores.length === wettedMaterials.length && validScores.length > 0 ? Math.min(...validScores) : null
+    const status = classifyCompatibilityScore(worstScore)
+    statusByFluidKey.set(fluid.key, status)
+    if (status === "Compatible") compatibleFluids.push(fluid.label)
+    else if (status === "Acceptable") acceptableFluids.push(fluid.label)
+    else if (status === "Not compatible") notCompatibleFluids.push(fluid.label)
+    else toBeConfirmedFluids.push(fluid.label)
+  })
 
   const selectedFluidName = displayValue(selectedFluid?.name)
-  const isStandardStainlessFkmPctfe =
-    (materialSignature.includes("stainless") || materialSignature.includes("inox")) &&
-    materialSignature.includes("fkm") &&
-    materialSignature.includes("pctfe")
-
-  if (!isStandardStainlessFkmPctfe) {
-    return {
-      compatibleLabel: `Compatible: ${selectedFluidName}`,
-      acceptableLabel: "Acceptable: to be confirmed with selected wetted materials",
-    }
-  }
+  const selectedFluidKey = normalizeFluidName(selectedFluidName)
+  const selectedFluidStatus = selectedFluidKey ? statusByFluidKey.get(selectedFluidKey) || "To be confirmed" : "To be confirmed"
+  const selectedFluidStatusLabel = selectedFluidStatus === "Compatible"
+    ? "Compatible with selected wetted materials"
+    : selectedFluidStatus === "Acceptable"
+      ? "Acceptable - technical confirmation recommended"
+      : selectedFluidStatus === "Not compatible"
+        ? "Not compatible with selected wetted materials"
+        : "To be confirmed with selected wetted materials"
 
   return {
-    compatibleLabel:
-      "Compatible: Air, Argon, Azote, Butane, Dioxyde de carbone, Gaz naturel, Hélium, Hydrogène",
-    acceptableLabel: "Acceptable: Oxygène",
+    selectedFluidName,
+    selectedFluidStatus,
+    selectedFluidStatusLabel,
+    compatibleFluids,
+    acceptableFluids,
+    notCompatibleFluids,
+    toBeConfirmedFluids,
+    compatibleLabel: `Compatible: ${joinCompatibilityList(compatibleFluids)}`,
+    acceptableLabel: `Acceptable: ${joinCompatibilityList(acceptableFluids)}`,
+    notCompatibleLabel: `Not compatible: ${joinCompatibilityList(notCompatibleFluids)}`,
+    toBeConfirmedLabel: `To be confirmed: ${joinCompatibilityList(toBeConfirmedFluids)}`,
   }
 }
 
@@ -2040,8 +2181,10 @@ function ProductDatasheet({
             </div>
             <div className="mt-3 rounded-lg border border-slate-300 bg-slate-50 p-3">
               <p className="text-[11px] font-black text-slate-500">Fluid compatibility</p>
+              <p className="mt-1 text-xs font-black text-slate-800">Selected fluid status: {datasheetFluidCompatibilitySummary.selectedFluidStatusLabel}</p>
               <p className="mt-1 text-xs font-black text-slate-800">{datasheetFluidCompatibilitySummary.compatibleLabel}</p>
               <p className="mt-1 text-xs font-black text-amber-700">{datasheetFluidCompatibilitySummary.acceptableLabel}</p>
+              <p className="mt-1 text-xs font-black text-rose-700">{datasheetFluidCompatibilitySummary.notCompatibleLabel}</p>
             </div>
           </DatasheetSection>
 
@@ -2069,7 +2212,6 @@ function ProductDatasheet({
               <DatasheetLine label="Fluid density" value={computedFluid ? `${computedFluid.density} kg/Nm3` : "-"} />
               <DatasheetLine label="Required seat size" value={displayNumber(sizingSummary.minRequiredSeatSize, " mm")} />
               <DatasheetLine label="Required port" value={displayValue(sizingSummary.requiredConnector.label)} />
-              <DatasheetLine label="Recommended DN" value={dnSizingProfile.recommendedDnLabel} />
               <DatasheetLine label="Selected DN" value={displayValue(product.dn)} />
               <DatasheetLine label="Regulation / setting" value={`${displayValue(product.regulation)} / ${displayValue(product.setting)}`} />
             </div>
