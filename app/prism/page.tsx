@@ -674,38 +674,65 @@ export default function PrismPage() {
     const activeConditions = calculatedConditions.filter(
       (condition) => condition.inletPressure > 0 || condition.flowRateGs > 0
     )
-    const tableConditions = (activeConditions.length > 0 ? activeConditions : calculatedConditions).slice(0, 5)
+    const tableConditions = (activeConditions.length > 0 ? activeConditions : calculatedConditions).slice(0, 4)
     const fluidCompatibilitySummary = buildFluidCompatibilitySummary(product, selectedFluid)
 
     const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true })
 
     type Rgb = [number, number, number]
-    type Tone = "default" | "accent" | "warning" | "success" | "danger"
-    type TextOptions = { size?: number; bold?: boolean; color?: Rgb; align?: "left" | "center" | "right"; maxWidth?: number }
-    type DetailItem = { label: string; value: unknown; tone?: Tone }
+    type Tone = "default" | "accent" | "warning" | "success" | "danger" | "neutral"
+    type TextOptions = {
+      size?: number
+      bold?: boolean
+      color?: Rgb
+      align?: "left" | "center" | "right"
+      maxWidth?: number
+      lineHeightFactor?: number
+    }
+    type DetailItem = { label: string; value: unknown; tone?: Tone; note?: unknown }
+    type SketchAsset = { dataUrl: string; format: "PNG" | "JPEG" }
 
     const pageWidth = pdf.internal.pageSize.getWidth()
     const pageHeight = pdf.internal.pageSize.getHeight()
     const margin = 12
     const contentW = pageWidth - margin * 2
-    const purple: Rgb = [69, 0, 232]
-    const purpleSoft: Rgb = [243, 239, 255]
-    const navy: Rgb = [23, 24, 56]
+    const accent: Rgb = [88, 49, 255]
+    const accentDark: Rgb = [56, 30, 184]
+    const accentSoft: Rgb = [242, 239, 255]
+    const navy: Rgb = [17, 24, 39]
     const slate: Rgb = [71, 85, 105]
     const muted: Rgb = [100, 116, 139]
-    const line: Rgb = [211, 218, 229]
+    const line: Rgb = [214, 222, 235]
     const panel: Rgb = [247, 249, 252]
+    const pageBg: Rgb = [252, 253, 255]
     const white: Rgb = [255, 255, 255]
-    const success: Rgb = [22, 101, 52]
-    const successSoft: Rgb = [231, 246, 236]
+    const success: Rgb = [21, 128, 61]
+    const successSoft: Rgb = [232, 248, 238]
     const warning: Rgb = [180, 83, 9]
     const warningSoft: Rgb = [255, 247, 237]
     const danger: Rgb = [185, 28, 28]
     const dangerSoft: Rgb = [254, 226, 226]
+    const neutralSoft: Rgb = [241, 245, 249]
 
-    function setFill(color: Rgb) { pdf.setFillColor(color[0], color[1], color[2]) }
-    function setStroke(color: Rgb = line, width = 0.2) { pdf.setDrawColor(color[0], color[1], color[2]); pdf.setLineWidth(width) }
-    function setText(color: Rgb = navy) { pdf.setTextColor(color[0], color[1], color[2]) }
+    function setFill(color: Rgb) {
+      pdf.setFillColor(color[0], color[1], color[2])
+    }
+
+    function setStroke(color: Rgb = line, width = 0.2) {
+      pdf.setDrawColor(color[0], color[1], color[2])
+      pdf.setLineWidth(width)
+    }
+
+    function setText(color: Rgb = navy) {
+      pdf.setTextColor(color[0], color[1], color[2])
+    }
+
+    function linesFor(value: unknown, width: number, size = 7) {
+      pdf.setFont("helvetica", "normal")
+      pdf.setFontSize(size)
+      const textValue = displayValue(value)
+      return pdf.splitTextToSize(textValue, width) as string[]
+    }
 
     function write(value: unknown, x: number, y: number, options: TextOptions = {}) {
       pdf.setFont("helvetica", options.bold ? "bold" : "normal")
@@ -713,63 +740,39 @@ export default function PrismPage() {
       setText(options.color ?? navy)
       const textValue = displayValue(value)
       if (options.maxWidth) {
-        const lines = pdf.splitTextToSize(textValue, options.maxWidth)
-        pdf.text(lines, x, y, { align: options.align ?? "left", lineHeightFactor: 1.15 })
-        return Array.isArray(lines) ? lines.length : 1
+        const lines = pdf.splitTextToSize(textValue, options.maxWidth) as string[]
+        pdf.text(lines, x, y, {
+          align: options.align ?? "left",
+          lineHeightFactor: options.lineHeightFactor ?? 1.16,
+        })
+        return lines.length
       }
       pdf.text(textValue, x, y, { align: options.align ?? "left" })
       return 1
     }
 
-    function roundedPanel(x: number, y: number, w: number, h: number, fillColor: Rgb = white, strokeColor: Rgb = line) {
+    function roundedPanel(x: number, y: number, w: number, h: number, fillColor: Rgb = white, strokeColor: Rgb = line, radius = 3) {
       setFill(fillColor)
-      setStroke(strokeColor)
-      pdf.roundedRect(x, y, w, h, 2.4, 2.4, "FD")
+      setStroke(strokeColor, 0.22)
+      pdf.roundedRect(x, y, w, h, radius, radius, "FD")
     }
 
-    function sectionHeader(title: string, subtitle: string | undefined, x: number, y: number, w: number) {
-      setFill(purple)
-      pdf.roundedRect(x, y, 2.5, 9, 1.2, 1.2, "F")
-      write(title.toUpperCase(), x + 5, y + 4.1, { size: 8.5, bold: true, color: navy })
-      if (subtitle) write(subtitle, x + 5, y + 8, { size: 5.8, color: muted })
+    function sectionTitle(title: string, subtitle: string | undefined, x: number, y: number, w: number) {
+      setFill(accent)
+      pdf.roundedRect(x, y + 0.4, 3, 9, 1.4, 1.4, "F")
+      write(title.toUpperCase(), x + 6, y + 4.3, { size: 8.4, bold: true, color: navy })
+      if (subtitle) write(subtitle, x + 6, y + 8.3, { size: 5.6, color: muted, maxWidth: w - 60 })
       setStroke(line)
-      pdf.line(x + 58, y + 4.5, x + w, y + 4.5)
+      pdf.line(x + 72, y + 4.9, x + w, y + 4.9)
     }
 
     function toneColors(tone: Tone = "default"): { text: Rgb; bg: Rgb; border: Rgb } {
-      if (tone === "success") return { text: success, bg: successSoft, border: [187, 227, 201] }
-      if (tone === "warning") return { text: warning, bg: warningSoft, border: [251, 191, 36] }
+      if (tone === "success") return { text: success, bg: successSoft, border: [184, 224, 199] }
+      if (tone === "warning") return { text: warning, bg: warningSoft, border: [252, 211, 77] }
       if (tone === "danger") return { text: danger, bg: dangerSoft, border: [248, 113, 113] }
-      if (tone === "accent") return { text: purple, bg: purpleSoft, border: [205, 193, 255] }
+      if (tone === "accent") return { text: accentDark, bg: accentSoft, border: [202, 192, 255] }
+      if (tone === "neutral") return { text: slate, bg: neutralSoft, border: line }
       return { text: navy, bg: white, border: line }
-    }
-
-    function detailCard(item: DetailItem, x: number, y: number, w: number, h: number) {
-      const tone = toneColors(item.tone)
-      roundedPanel(x, y, w, h, tone.bg, tone.border)
-      write(item.label, x + 3, y + 4.5, { size: 5.7, bold: true, color: muted, maxWidth: w - 6 })
-      write(item.value, x + 3, y + 10.8, { size: 7.4, bold: true, color: tone.text, maxWidth: w - 6 })
-    }
-
-    function detailGrid(items: DetailItem[], x: number, y: number, w: number, columns: number, cardH = 16, gap = 3.2) {
-      const cardW = (w - gap * (columns - 1)) / columns
-      items.forEach((item, index) => {
-        const col = index % columns
-        const row = Math.floor(index / columns)
-        detailCard(item, x + col * (cardW + gap), y + row * (cardH + gap), cardW, cardH)
-      })
-      return y + Math.ceil(items.length / columns) * cardH + (Math.ceil(items.length / columns) - 1) * gap
-    }
-
-    function compactList(items: DetailItem[], x: number, y: number, w: number) {
-      const rowH = 8.6
-      items.forEach((item, index) => {
-        const cy = y + index * rowH
-        write(item.label, x, cy + 3.1, { size: 5.5, bold: true, color: muted, maxWidth: 28 })
-        write(item.value, x + 27, cy + 3.1, { size: 6.4, bold: true, color: item.tone === "accent" ? purple : navy, maxWidth: w - 28 })
-        setStroke(line)
-        pdf.line(x, cy + 6.4, x + w, cy + 6.4)
-      })
     }
 
     function statusTone(status: unknown): Tone {
@@ -777,7 +780,7 @@ export default function PrismPage() {
       if (value.includes("exceed")) return "danger"
       if (value.includes("near") || value.includes("warning")) return "warning"
       if (value.includes("ok")) return "success"
-      return "default"
+      return "neutral"
     }
 
     function statusLabel(status: unknown) {
@@ -785,43 +788,236 @@ export default function PrismPage() {
       return value === "Near limit" ? "Warning" : value
     }
 
-    function drawMatrixTable(title: string, x: number, y: number, w: number, labelW: number, rows: [string, unknown[]][]) {
-      const rowH = 6.6
+    function metricCard(item: DetailItem, x: number, y: number, w: number, h: number) {
+      const tone = toneColors(item.tone)
+      roundedPanel(x, y, w, h, tone.bg, tone.border, 2.6)
+      write(item.label, x + 3.2, y + 4.6, { size: 5.4, bold: true, color: muted, maxWidth: w - 6 })
+      write(item.value, x + 3.2, y + 11.3, { size: 7.2, bold: true, color: tone.text, maxWidth: w - 6, lineHeightFactor: 1.05 })
+      if (item.note) write(item.note, x + 3.2, y + h - 3.3, { size: 4.8, color: muted, maxWidth: w - 6 })
+    }
+
+    function metricGrid(items: DetailItem[], x: number, y: number, w: number, columns: number, cardH = 16, gap = 3.2) {
+      const cardW = (w - gap * (columns - 1)) / columns
+      items.forEach((item, index) => {
+        const col = index % columns
+        const row = Math.floor(index / columns)
+        metricCard(item, x + col * (cardW + gap), y + row * (cardH + gap), cardW, cardH)
+      })
+      const rows = Math.ceil(items.length / columns)
+      return y + rows * cardH + Math.max(0, rows - 1) * gap
+    }
+
+    function infoRows(items: DetailItem[], x: number, y: number, w: number, rowH = 8.2) {
+      items.forEach((item, index) => {
+        const cy = y + index * rowH
+        const tone = toneColors(item.tone)
+        write(item.label, x, cy + 3.3, { size: 5.5, bold: true, color: muted, maxWidth: 30 })
+        write(item.value, x + 31, cy + 3.4, { size: 6.5, bold: true, color: tone.text, maxWidth: w - 33 })
+        setStroke(line)
+        pdf.line(x, cy + 6.8, x + w, cy + 6.8)
+      })
+    }
+
+    function pill(text: unknown, x: number, y: number, w: number, tone: Tone) {
+      const colors = toneColors(tone)
+      setFill(colors.bg)
+      setStroke(colors.border)
+      pdf.roundedRect(x, y, w, 5.8, 2.2, 2.2, "FD")
+      write(text, x + w / 2, y + 4, { size: 5.6, bold: true, color: colors.text, align: "center", maxWidth: w - 2 })
+    }
+
+    function pageBackground() {
+      setFill(pageBg)
+      pdf.rect(0, 0, pageWidth, pageHeight, "F")
+    }
+
+    function pageFooter(pageNumber: number) {
+      setStroke(line)
+      pdf.line(margin, pageHeight - 9, pageWidth - margin, pageHeight - 9)
+      write("PRISM - automatically generated datasheet", margin, pageHeight - 4.5, { size: 5.4, bold: true, color: muted })
+      write(`Created by IMF Fluid regulation - ${pageNumber}/2`, pageWidth - margin, pageHeight - 4.5, { size: 5.4, color: muted, align: "right" })
+    }
+
+    function header(title: string, subtitle: string, pageNumber: number) {
+      roundedPanel(margin, 10, contentW, 31, white, [195, 203, 219], 4)
+      setFill(accent)
+      pdf.roundedRect(margin, 10, 4, 31, 2, 2, "F")
+      pdf.addImage(IMF_LOGO_DATA_URL, "PNG", margin + 8, 16.3, 40, 8.4)
+      write(title, margin + 55, 18.5, { size: 13.6, bold: true, color: navy })
+      write(subtitle, margin + 55, 24.5, { size: 6.4, color: slate })
+      write("ARTICLE CODE", margin + 55, 34, { size: 5.4, bold: true, color: muted })
+      write(displayValue(product.newCode, "Several models possible"), margin + 76, 34, { size: 7.6, bold: true, color: accentDark, maxWidth: 75 })
+      roundedPanel(pageWidth - margin - 42, 15, 34, 17, accentSoft, [202, 192, 255], 3)
+      write("MODEL", pageWidth - margin - 25, 20, { size: 5.5, bold: true, color: muted, align: "center" })
+      write(product.model, pageWidth - margin - 25, 29, { size: 15.5, bold: true, color: accentDark, align: "center" })
+      pageFooter(pageNumber)
+    }
+
+    function productSketchCandidates() {
+      const model = displayValue(product.model).toLowerCase().replace(/[^a-z0-9]+/g, "")
+      const code = displayValue(product.newCode).toLowerCase().replace(/[^a-z0-9-_]+/g, "-").replace(/^-+|-+$/g, "")
+      return [
+        `/prism-sketches/${code}.png`,
+        `/prism-sketches/${code}.jpg`,
+        `/prism-sketches/model-${model}.png`,
+        `/prism-sketches/model-${model}.jpg`,
+        `/prism-sketches/${model}.png`,
+        `/prism-sketches/${model}.jpg`,
+      ]
+    }
+
+    async function loadSketchAsset(): Promise<SketchAsset | null> {
+      for (const url of productSketchCandidates()) {
+        try {
+          const response = await fetch(url, { cache: "no-store" })
+          if (!response.ok) continue
+          const blob = await response.blob()
+          if (!blob.type.startsWith("image/")) continue
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onload = () => resolve(String(reader.result))
+            reader.onerror = () => reject(reader.error)
+            reader.readAsDataURL(blob)
+          })
+          return { dataUrl, format: blob.type.includes("jpeg") || blob.type.includes("jpg") ? "JPEG" : "PNG" }
+        } catch {
+          // Optional customer sketch asset not available in this project yet.
+        }
+      }
+      return null
+    }
+
+    function drawFallbackSketch(x: number, y: number, w: number, h: number) {
+      const cx = x + w / 2
+      const top = y + 14
+      const bodyW = w * 0.44
+      const bodyH = h * 0.42
+      setStroke([132, 145, 166], 0.6)
+      setFill([249, 250, 252])
+      pdf.roundedRect(cx - bodyW / 2, top + 16, bodyW, bodyH, 4, 4, "FD")
+      pdf.rect(cx - bodyW * 0.18, top + 4, bodyW * 0.36, 14, "FD")
+      pdf.line(cx - bodyW / 2 - 12, top + 28, cx - bodyW / 2, top + 28)
+      pdf.line(cx + bodyW / 2, top + 28, cx + bodyW / 2 + 12, top + 28)
+      pdf.circle(cx, top + 35, 8, "S")
+      pdf.line(cx - 4, top + 35, cx + 4, top + 35)
+      pdf.line(cx, top + 31, cx, top + 39)
+      setFill(neutralSoft)
+      setStroke(line, 0.25)
+      pdf.roundedRect(x + 10, y + h - 18, w - 20, 9, 2.5, 2.5, "FD")
+      write("Product drawing pending", cx, y + h - 12.2, { size: 5.4, bold: true, color: slate, align: "center", maxWidth: w - 24 })
+      write("Reserved area for model sketch", cx, y + h - 8.3, { size: 4.7, color: muted, align: "center", maxWidth: w - 24 })
+    }
+
+    function drawProductSketch(asset: SketchAsset | null, x: number, y: number, w: number, h: number) {
+      roundedPanel(x, y, w, h, white, line, 4)
+      write("PRODUCT VIEW", x + 5, y + 6, { size: 5.8, bold: true, color: muted })
+      write(`Model ${displayValue(product.model)}`, x + w - 5, y + 6, { size: 5.8, bold: true, color: accentDark, align: "right" })
+      if (asset) {
+        const imageMargin = 7
+        pdf.addImage(asset.dataUrl, asset.format, x + imageMargin, y + 11, w - imageMargin * 2, h - 24, undefined, "FAST")
+        write("Customer reference sketch - non contractual", x + w / 2, y + h - 5.5, { size: 4.8, color: muted, align: "center" })
+      } else {
+        drawFallbackSketch(x, y + 5, w, h - 5)
+      }
+    }
+
+    function drawCompatibilityPanel(x: number, y: number, w: number, h: number) {
+      roundedPanel(x, y, w, h, white, line, 3)
+      write("FLUID COMPATIBILITY", x + 4, y + 6, { size: 6, bold: true, color: muted })
+      write("Selection and material compatibility", x + 4, y + 10, { size: 5.1, color: muted })
+
+      const selectedTone: Tone =
+        fluidCompatibilitySummary.selectedFluidStatus === "Compatible"
+          ? "success"
+          : fluidCompatibilitySummary.selectedFluidStatus === "Acceptable"
+            ? "warning"
+            : fluidCompatibilitySummary.selectedFluidStatus === "Not compatible"
+              ? "danger"
+              : "neutral"
+
+      metricCard({ label: "Selected fluid", value: displayValue(selectedFluid?.name), tone: "neutral" }, x + 4, y + 14, (w - 10) * 0.52, 15)
+      metricCard({ label: "Selected fluid status", value: fluidCompatibilitySummary.selectedFluidStatus, tone: selectedTone }, x + 6 + (w - 10) * 0.52, y + 14, (w - 10) * 0.48, 15)
+
+      const compatibleText = fluidCompatibilitySummary.compatibleFluids.length > 0 ? fluidCompatibilitySummary.compatibleFluids.join(", ") : "None"
+      const acceptableText = fluidCompatibilitySummary.acceptableFluids.length > 0 ? fluidCompatibilitySummary.acceptableFluids.join(", ") : "None"
+      const notCompatibleText = fluidCompatibilitySummary.notCompatibleFluids.length > 0 ? fluidCompatibilitySummary.notCompatibleFluids.join(", ") : "None"
+
+      write("Compatible fluids", x + 4, y + 36, { size: 5.6, bold: true, color: success })
+      write(compatibleText, x + 4, y + 40.2, { size: 5.4, color: slate, maxWidth: w - 8, lineHeightFactor: 1.1 })
+      write("Acceptable fluids", x + 4, y + 51, { size: 5.6, bold: true, color: warning })
+      write(acceptableText, x + 4, y + 55.2, { size: 5.4, color: slate, maxWidth: w - 8, lineHeightFactor: 1.1 })
+      write("Not compatible", x + 4, y + h - 10, { size: 5.6, bold: true, color: danger })
+      write(notCompatibleText, x + 32, y + h - 10, { size: 5.4, color: slate, maxWidth: w - 36, lineHeightFactor: 1.1 })
+    }
+
+    function drawMatrixTable(title: string, x: number, y: number, w: number, labelW: number, rows: [string, unknown[]][], options: { rowH?: number; headerH?: number; statusRow?: boolean } = {}) {
+      const rowH = options.rowH ?? 7.1
+      const headerH = options.headerH ?? 7.6
       const conditionCount = Math.max(tableConditions.length, 1)
       const cellW = (w - labelW) / conditionCount
-      roundedPanel(x, y, w, rowH * (rows.length + 1), white, line)
+      const tableH = headerH + rowH * rows.length
+      roundedPanel(x, y, w, tableH, white, line, 3)
       setFill(panel)
-      pdf.roundedRect(x, y, w, rowH, 2.2, 2.2, "F")
-      write(title, x + 3, y + 4.5, { size: 6.4, bold: true, color: navy })
+      pdf.roundedRect(x, y, w, headerH, 3, 3, "F")
+      write(title, x + 3, y + 4.9, { size: 6.2, bold: true, color: navy })
       tableConditions.forEach((condition, index) => {
         const cx = x + labelW + index * cellW
-        setStroke(line)
-        pdf.line(cx, y, cx, y + rowH * (rows.length + 1))
-        write(`C${condition.id}`, cx + cellW / 2, y + 4.5, { size: 6, bold: true, color: purple, align: "center" })
+        if (index > 0 || labelW > 0) {
+          setStroke(line)
+          pdf.line(cx, y, cx, y + tableH)
+        }
+        write(`C${condition.id}`, cx + cellW / 2, y + 4.9, { size: 6.1, bold: true, color: accentDark, align: "center" })
       })
       rows.forEach(([label, values], rowIndex) => {
-        const ry = y + rowH * (rowIndex + 1)
+        const ry = y + headerH + rowIndex * rowH
         setStroke(line)
         pdf.line(x, ry, x + w, ry)
-        write(label, x + 3, ry + 4.4, { size: 5.7, bold: true, color: slate, maxWidth: labelW - 5 })
+        write(label, x + 3, ry + 4.7, { size: 5.5, bold: true, color: slate, maxWidth: labelW - 5 })
         values.slice(0, conditionCount).forEach((value, index) => {
           const cx = x + labelW + index * cellW
           const isStatus = label.toLowerCase().includes("status")
-          const tone = isStatus ? toneColors(statusTone(value)) : toneColors("default")
           if (isStatus) {
-            setFill(tone.bg)
-            setStroke(tone.border)
-            pdf.roundedRect(cx + 2, ry + 1.3, cellW - 4, 4.4, 1.4, 1.4, "FD")
+            pill(statusLabel(value), cx + 3, ry + 1.5, cellW - 6, statusTone(value))
+          } else {
+            write(value, cx + cellW / 2, ry + 4.7, {
+              size: 5.7,
+              bold: label.toLowerCase().includes("flow") || label.toLowerCase().includes("pressure"),
+              color: navy,
+              align: "center",
+              maxWidth: cellW - 2,
+            })
           }
-          write(isStatus ? statusLabel(value) : value, cx + cellW / 2, ry + 4.3, {
-            size: 5.6,
-            bold: isStatus,
-            color: isStatus ? tone.text : navy,
-            align: "center",
-            maxWidth: cellW - 2,
-          })
         })
       })
+      return y + tableH
+    }
+
+    function drawCapacityCards(x: number, y: number, w: number) {
+      const gap = 3
+      const count = Math.max(tableConditions.length, 1)
+      const cardW = (w - gap * (count - 1)) / count
+      const cardH = 35
+      tableConditions.forEach((condition, index) => {
+        const cx = x + index * (cardW + gap)
+        const tone = statusTone(condition.capacityStatus)
+        const colors = toneColors(tone)
+        roundedPanel(cx, y, cardW, cardH, white, colors.border, 3)
+        write(`C${condition.id}`, cx + 3, y + 5.6, { size: 6.8, bold: true, color: accentDark })
+        pill(statusLabel(condition.capacityStatus), cx + cardW - 21, y + 2.4, 18, tone)
+        write("Requested", cx + 3, y + 13, { size: 5, bold: true, color: muted })
+        write(`${displayValue(condition.flowNm3h)} Nm3/h`, cx + cardW - 3, y + 13, { size: 5.8, bold: true, color: navy, align: "right" })
+        write("Max admissible", cx + 3, y + 19, { size: 5, bold: true, color: muted })
+        write(`${displayValue(condition.maxAdmissibleFlow)} Nm3/h`, cx + cardW - 3, y + 19, { size: 5.8, bold: true, color: navy, align: "right" })
+        const utilization = Math.max(0, Math.min(Number(condition.utilizationPercent) || 0, 100))
+        setFill(neutralSoft)
+        setStroke(line)
+        pdf.roundedRect(cx + 3, y + 23, cardW - 6, 4, 1.8, 1.8, "FD")
+        setFill(colors.text)
+        pdf.roundedRect(cx + 3, y + 23, ((cardW - 6) * utilization) / 100, 4, 1.8, 1.8, "F")
+        write(`Utilization ${displayValue(condition.utilizationPercent)}%`, cx + 3, y + 31.5, { size: 5, bold: true, color: colors.text })
+        write(`Margin ${displayValue(condition.capacityMarginPercent)}%`, cx + cardW - 3, y + 31.5, { size: 5, bold: true, color: slate, align: "right" })
+      })
+      return y + cardH
     }
 
     function validationBanner(x: number, y: number, w: number, h: number) {
@@ -838,100 +1034,79 @@ export default function PrismPage() {
         : hasWarning
           ? "Sizing is usable with reduced margin. Check the highlighted working condition before release."
           : "The selected pressure regulator capacity covers the requested application conditions."
-      roundedPanel(x, y, w, h, tone.bg, tone.border)
+      roundedPanel(x, y, w, h, tone.bg, tone.border, 4)
       setFill(tone.text)
-      pdf.circle(x + 6, y + 7, 2.2, "F")
-      write(title, x + 12, y + 6, { size: 7.4, bold: true, color: tone.text, maxWidth: w - 17 })
-      write(body, x + 12, y + 11, { size: 5.8, color: slate, maxWidth: w - 17 })
+      pdf.circle(x + 7, y + 8, 2.4, "F")
+      write(title, x + 13, y + 6.6, { size: 7.4, bold: true, color: tone.text, maxWidth: w - 18 })
+      write(body, x + 13, y + 12.2, { size: 5.8, color: slate, maxWidth: w - 18 })
     }
 
-    function pageBackground() {
-      setFill([252, 253, 255])
-      pdf.rect(0, 0, pageWidth, pageHeight, "F")
-    }
-
-    function pageFooter() {
-      setStroke(line)
-      pdf.line(margin, pageHeight - 9, pageWidth - margin, pageHeight - 9)
-      write("PRISM - automatically generated datasheet", margin, pageHeight - 4.5, { size: 5.5, bold: true, color: muted })
-      write("Created by IMF Fluid regulation", pageWidth - margin, pageHeight - 4.5, { size: 5.5, color: muted, align: "right" })
-    }
+    const sketchAsset = await loadSketchAsset()
 
     pageBackground()
+    header("PRODUCT DATA SHEET", "Industrial pressure regulator configuration report", 1)
 
-    roundedPanel(margin, 10, contentW, 31, white, [195, 203, 219])
-    setFill(purple)
-    pdf.roundedRect(margin, 10, 4, 31, 2, 2, "F")
-    pdf.addImage(IMF_LOGO_DATA_URL, "PNG", margin + 8, 16, 42, 8.8)
-    write("PRODUCT DATA SHEET", margin + 56, 19, { size: 13.5, bold: true, color: navy })
-    write("Industrial pressure regulator configuration report", margin + 56, 25.4, { size: 6.7, color: slate })
-    write("Article code", margin + 56, 34, { size: 5.8, bold: true, color: muted })
-    write(displayValue(product.newCode, "Several models possible"), margin + 75, 34, { size: 8.2, bold: true, color: purple, maxWidth: 78 })
-    roundedPanel(pageWidth - margin - 43, 15, 34, 17, purpleSoft, [205, 193, 255])
-    write("MODEL", pageWidth - margin - 26, 20, { size: 5.8, bold: true, color: muted, align: "center" })
-    write(product.model, pageWidth - margin - 26, 28.8, { size: 16, bold: true, color: purple, align: "center" })
-
-    sectionHeader("Technical specification", "Core application and mechanical data", margin, 48, contentW)
-    const technicalItems: DetailItem[] = [
-      { label: "Selected fluid", value: selectedFluid?.name, tone: "accent" },
-      { label: "Selected fluid status", value: fluidCompatibilitySummary.selectedFluidStatus, tone: fluidCompatibilitySummary.selectedFluidStatus === "Not compatible" ? "danger" : fluidCompatibilitySummary.selectedFluidStatus === "Acceptable" ? "warning" : "success" },
-      { label: "Compatible fluids", value: fluidCompatibilitySummary.compatibleLabel.replace(/^Compatible fluids:\s*/i, ""), tone: "success" },
-      { label: "Acceptable fluids", value: fluidCompatibilitySummary.acceptableLabel.replace(/^Acceptable fluids:\s*/i, ""), tone: "warning" },
+    const startY = 49
+    const leftW = 113
+    const rightW = contentW - leftW - 6
+    sectionTitle("Technical specification", "Core application and mechanical data", margin, startY, leftW)
+    const techItems: DetailItem[] = [
       { label: "DN", value: product.dn },
       { label: "Max inlet pressure", value: product.mwp },
-      { label: "Temperature range", value: normalizeTemperatureLabel(product.workingTemp, `${sizingSummary.minTemperature} / ${sizingSummary.maxTemperature} °C`) },
-      { label: "Leakage rate", value: displayValue(product.leakageRate || product.leakageRateInternal || product.leakageRateExternal, "According to sealing") },
-      { label: "In & outlet port", value: product.port },
+      { label: "Temperature range", value: formatTemperatureRange(product.workingTemp, `${sizingSummary.minTemperature} to +${sizingSummary.maxTemperature}°C`) },
+      { label: "Leakage rate", value: formatLeakageRate(product.leakageRate || product.leakageRateInternal || product.leakageRateExternal) },
+      { label: "In & outlet port", value: product.port, tone: "accent" },
     ]
-    const technicalEndY = detailGrid(technicalItems, margin, 60, contentW, 3, 15.5, 3)
+    metricGrid(techItems, margin, startY + 12, leftW, 2, 16, 3)
+    drawCompatibilityPanel(margin, startY + 66, leftW, 54)
+    drawProductSketch(sketchAsset, margin + leftW + 6, startY + 12, rightW, 108)
 
-    const twoColGap = 6
-    const twoColW = (contentW - twoColGap) / 2
-    const midY = technicalEndY + 7
-    sectionHeader("Materials", "Wetted construction", margin, midY, twoColW)
-    sectionHeader("Product features", "Operating options", margin + twoColW + twoColGap, midY, twoColW)
-    roundedPanel(margin, midY + 12, twoColW, 32, white, line)
-    roundedPanel(margin + twoColW + twoColGap, midY + 12, twoColW, 32, white, line)
-    compactList([
+    const lowerY = 178
+    const colGap = 6
+    const colW = (contentW - colGap) / 2
+    sectionTitle("Materials", "Wetted construction", margin, lowerY, colW)
+    sectionTitle("Product features", "Operating options", margin + colW + colGap, lowerY, colW)
+    roundedPanel(margin, lowerY + 12, colW, 45, white, line, 3)
+    roundedPanel(margin + colW + colGap, lowerY + 12, colW, 45, white, line, 3)
+    infoRows([
       { label: "Body", value: product.bodyMaterial },
-      { label: "Valve insert", value: displayValue(product.valveInsert, "According to selected configuration") },
       { label: "Sealing", value: product.sealing },
+      { label: "Valve insert", value: displayValue(product.valveInsert, "According to selected configuration") },
       { label: "Seat", value: displayValue(product.seat, "According to selected configuration") },
-    ], margin + 4, midY + 17, twoColW - 8)
-    compactList([
+    ], margin + 4, lowerY + 18, colW - 8, 9)
+    infoRows([
       { label: "Certification", value: displayValue(product.certification) },
-      { label: "Options", value: displayValue(product.option) },
       { label: "Regulation", value: product.regulation },
       { label: "Setting", value: product.setting },
-    ], margin + twoColW + twoColGap + 4, midY + 17, twoColW - 8)
-    pageFooter()
+      { label: "Options", value: displayValue(product.option) },
+    ], margin + colW + colGap + 4, lowerY + 18, colW - 8, 9)
+
+    roundedPanel(margin, 241, contentW, 23, accentSoft, [202, 192, 255], 3)
+    write("CUSTOMER READABILITY NOTE", margin + 5, 247, { size: 5.6, bold: true, color: accentDark })
+    write("Fluid compatibility is separated from selected fluid. Compatibility is derived from wetted materials; PRISM sizing calculations are unchanged.", margin + 5, 253.5, { size: 6, color: slate, maxWidth: contentW - 10 })
 
     pdf.addPage()
     pageBackground()
-    roundedPanel(margin, 10, contentW, 23, white, [195, 203, 219])
-    setFill(purple)
-    pdf.roundedRect(margin, 10, 4, 23, 2, 2, "F")
-    pdf.addImage(IMF_LOGO_DATA_URL, "PNG", margin + 8, 16, 34, 7.1)
-    write("SIZING REPORT", margin + 50, 20, { size: 13, bold: true, color: navy })
-    write(displayValue(product.newCode, "Several models possible"), pageWidth - margin - 6, 20, { size: 7.5, bold: true, color: purple, align: "right", maxWidth: 75 })
-    write("PRISM calculation engine - pressure regulator capacity validation", margin + 50, 26, { size: 6.2, color: slate })
+    header("SIZING REPORT", "PRISM calculation engine - pressure regulator capacity validation", 2)
 
-    const sizingY = 42
-    sectionHeader("Sizing report", "Validation from PRISM calculation engine", margin, sizingY, contentW)
-    write("A. Summary", margin, sizingY + 15, { size: 7.4, bold: true, color: navy })
-    detailGrid([
+    let y = 49
+    sectionTitle("Sizing report", "Validation from PRISM calculation engine", margin, y, contentW)
+    y += 13
+    write("A. Summary", margin, y + 4, { size: 7.4, bold: true, color: navy })
+    y += 8
+    y = metricGrid([
       { label: "Fluid", value: selectedFluid?.name, tone: "accent" },
       { label: "Density", value: computedFluid ? `${computedFluid.density} kg/Nm3` : "-" },
       { label: "Required seat", value: displayNumber(sizingSummary.minRequiredSeatSize, " mm"), tone: "accent" },
       { label: "Required port", value: sizingSummary.requiredConnector.label, tone: "accent" },
       { label: "Setting / regulation", value: `${displayValue(product.setting)} / ${displayValue(product.regulation)}` },
-    ], margin, sizingY + 20, contentW, 5, 16, 3)
+    ], margin, y, contentW, 5, 15.5, 3)
 
     const workingRows: [string, unknown[]][] = [
       ["Inlet pressure (bar g)", tableConditions.map((item) => item.inletPressure)],
       ["Outlet pressure (bar g)", tableConditions.map((item) => item.outletPressure)],
       ["Flow rate (Nm3/h)", tableConditions.map((item) => item.flowNm3h)],
-      ["Fluid temperature (C)", tableConditions.map((item) => item.temperature)],
+      ["Fluid temperature (deg C)", tableConditions.map((item) => item.temperature)],
       ["Seat required (mm)", tableConditions.map((item) => item.seatSize)],
       ["Outlet bore required (mm)", tableConditions.map((item) => item.outletBore)],
     ]
@@ -943,13 +1118,16 @@ export default function PrismPage() {
       ["Status", tableConditions.map((item) => item.capacityStatus)],
     ]
 
-    write("B. Application working conditions", margin, sizingY + 46, { size: 7.4, bold: true, color: navy })
-    drawMatrixTable("Working conditions", margin, sizingY + 51, contentW, 54, workingRows)
-    write("C. Pressure Regulator Capacity", margin, sizingY + 97, { size: 7.4, bold: true, color: navy })
-    drawMatrixTable("Capacity check", margin, sizingY + 102, contentW, 54, capacityRows)
-    write("D. Sizing validation", margin, sizingY + 141, { size: 7.4, bold: true, color: navy })
-    validationBanner(margin, sizingY + 146, contentW, 18)
-    pageFooter()
+    y += 8
+    write("B. Application working conditions", margin, y + 4, { size: 7.4, bold: true, color: navy })
+    y = drawMatrixTable("Working conditions", margin, y + 8, contentW, 56, workingRows, { rowH: 6.8, headerH: 7.4 }) + 8
+
+    write("C. Pressure Regulator Capacity", margin, y + 4, { size: 7.4, bold: true, color: navy })
+    y = drawCapacityCards(margin, y + 8, contentW) + 6
+    y = drawMatrixTable("Capacity check - detailed values", margin, y, contentW, 56, capacityRows, { rowH: 6.4, headerH: 7.2 }) + 8
+
+    write("D. Sizing validation", margin, y + 4, { size: 7.4, bold: true, color: navy })
+    validationBanner(margin, y + 8, contentW, 21)
 
     const safeCode = String(product.newCode || "product")
       .replace(/[^a-z0-9-_]+/gi, "-")
@@ -1077,11 +1255,13 @@ export default function PrismPage() {
     ? buildFluidCompatibilitySummary(selectedConfiguration, selectedFluid)
     : {
         selectedFluidStatus: "To be confirmed" as const,
-        selectedStatusLabel: "Selected fluid status: To be confirmed",
-        compatibleLabel: `Compatible fluids: ${displayValue(selectedFluid?.name)}`,
-        acceptableLabel: "Acceptable fluids: to be confirmed with selected wetted materials",
+        compatibleFluids: [],
+        acceptableFluids: [],
+        notCompatibleFluids: [],
+        toBeConfirmedFluids: [],
+        compatibleLabel: "Compatible fluids: None",
+        acceptableLabel: "Acceptable fluids: None",
         notCompatibleLabel: "Not compatible fluids: None",
-        hasMaterialCompatibilityIssue: true,
       }
 
   return (
@@ -1379,6 +1559,11 @@ export default function PrismPage() {
               value={sizingSummary.requiredConnector.label}
             />
 
+            <Result
+              label="Recommended DN"
+              value={dnSizingProfile.recommendedDnLabel}
+            />
+
 
             <Result
               label="Required MWP"
@@ -1460,6 +1645,7 @@ export default function PrismPage() {
 
           {sizingApplied && (
             <div className="mb-6 rounded-2xl border border-cyan-300/25 bg-cyan-400/10 p-4 text-sm text-cyan-50">
+              <p className="font-black">Recommended DN: {dnSizingProfile.recommendedDnLabel}</p>
               <p className="mt-1 text-cyan-100/80">
                 Recommendation calculated from the customer working limits and constrained by the DN values still available after the active filters.
               </p>
@@ -1659,96 +1845,279 @@ function displayNumber(value: unknown, suffix = "") {
   const rounded = Math.round(numeric * 10) / 10
   return `${rounded}${suffix}`
 }
-
-function normalizeTemperatureLabel(value: unknown, fallback: string) {
-  const rawValue = displayValue(value, fallback)
-  return rawValue
+function formatTemperatureRange(value: unknown, fallback: string) {
+  const raw = displayValue(value, fallback)
+  return raw
     .replace(/°\s*°\s*C/gi, "°C")
     .replace(/deg\s*C/gi, "°C")
-    .replace(/\s+C$/i, "°C")
+    .replace(/\s*C$/i, "°C")
+    .replace(/\s*°C/gi, "°C")
 }
 
-function normalizeCompatibilityText(value: unknown) {
-  return String(value || "")
+function formatLeakageRate(value: unknown) {
+  const raw = displayValue(value)
+  if (/10\s*-\s*3|10\^-?3|1\s*x\s*10\^-?3/i.test(raw)) return "1 x 10^-3 mbar·l/s"
+  return raw.replace(/mbar\.l\/s/gi, "mbar·l/s")
+}
+
+
+type CompatibilityScore = -1 | 0 | 1 | 2
+
+type FluidCompatibilityStatus = "Compatible" | "Acceptable" | "Not compatible" | "To be confirmed"
+
+type FluidCompatibilitySummary = {
+  selectedFluidStatus: FluidCompatibilityStatus
+  compatibleFluids: string[]
+  acceptableFluids: string[]
+  notCompatibleFluids: string[]
+  toBeConfirmedFluids: string[]
+  compatibleLabel: string
+  acceptableLabel: string
+  notCompatibleLabel: string
+}
+
+const fluidCompatibilityMatrix: Array<{
+  key: string
+  label: string
+  values: Record<string, CompatibilityScore | null>
+}> = [
+  {
+    key: "air",
+    label: "Air",
+    values: {
+      stainlesssteel: 2,
+      brass: 2,
+      cuproalu: 2,
+      fkm: 2,
+      pctfe: 2,
+      vespel: 2,
+      torlon: 2,
+      nbr: 2,
+      energizedptfe: 2,
+      peek: 2,
+    },
+  },
+  {
+    key: "airrespirable",
+    label: "Air respirable",
+    values: {
+      stainlesssteel: 2,
+      brass: 2,
+      cuproalu: 0,
+      fkm: 0,
+      pctfe: -1,
+      vespel: 0,
+      torlon: 0,
+      nbr: 2,
+      energizedptfe: 0,
+      peek: 0,
+    },
+  },
+  {
+    key: "argon",
+    label: "Argon",
+    values: {
+      stainlesssteel: 2,
+      brass: 2,
+      cuproalu: 1,
+      fkm: 2,
+      pctfe: 2,
+      vespel: 0,
+      torlon: 0,
+      nbr: -1,
+      energizedptfe: 2,
+      peek: 2,
+    },
+  },
+  {
+    key: "azote",
+    label: "Azote",
+    values: {
+      stainlesssteel: 2,
+      brass: 2,
+      cuproalu: 2,
+      fkm: 2,
+      pctfe: 2,
+      vespel: 2,
+      torlon: 2,
+      nbr: 2,
+      energizedptfe: 2,
+      peek: 2,
+    },
+  },
+  {
+    key: "butane",
+    label: "Butane",
+    values: {
+      stainlesssteel: 2,
+      brass: 2,
+      cuproalu: 1,
+      fkm: 2,
+      pctfe: 2,
+      vespel: 0,
+      torlon: 0,
+      nbr: 2,
+      energizedptfe: 2,
+      peek: 2,
+    },
+  },
+  {
+    key: "dioxydedecarbone",
+    label: "Dioxyde de carbone",
+    values: {
+      stainlesssteel: 2,
+      brass: -1,
+      cuproalu: 1,
+      fkm: 2,
+      pctfe: 2,
+      vespel: 2,
+      torlon: 0,
+      nbr: 2,
+      energizedptfe: 2,
+      peek: 0,
+    },
+  },
+  {
+    key: "gaznaturel",
+    label: "Gaz naturel",
+    values: {
+      stainlesssteel: 2,
+      brass: 1,
+      cuproalu: 2,
+      fkm: 2,
+      pctfe: 2,
+      vespel: 0,
+      torlon: 0,
+      nbr: 2,
+      energizedptfe: 2,
+      peek: 2,
+    },
+  },
+  {
+    key: "helium",
+    label: "Hélium",
+    values: {
+      stainlesssteel: 2,
+      brass: 2,
+      cuproalu: 2,
+      fkm: 2,
+      pctfe: 2,
+      vespel: 2,
+      torlon: null,
+      nbr: 2,
+      energizedptfe: 2,
+      peek: 2,
+    },
+  },
+  {
+    key: "hydrogene",
+    label: "Hydrogène",
+    values: {
+      stainlesssteel: 2,
+      brass: 2,
+      cuproalu: 2,
+      fkm: 2,
+      pctfe: 2,
+      vespel: 0,
+      torlon: 0,
+      nbr: 2,
+      energizedptfe: 2,
+      peek: 2,
+    },
+  },
+  {
+    key: "oxygene",
+    label: "Oxygène",
+    values: {
+      stainlesssteel: 1,
+      brass: 2,
+      cuproalu: 2,
+      fkm: 2,
+      pctfe: 2,
+      vespel: 2,
+      torlon: 0,
+      nbr: -1,
+      energizedptfe: 2,
+      peek: 0,
+    },
+  },
+]
+
+function normalizeCompatibilityKey(value: unknown) {
+  return displayValue(value, "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim()
+    .replace(/[^a-z0-9]+/g, "")
 }
 
-function joinFluidList(values: string[]) {
-  return values.length ? values.join(", ") : "None"
+function materialCompatibilityKey(value: unknown) {
+  const key = normalizeCompatibilityKey(value)
+  if (key.includes("stainless") || key.includes("inox")) return "stainlesssteel"
+  if (key.includes("brass") || key.includes("laiton")) return "brass"
+  if (key.includes("cupro")) return "cuproalu"
+  if (key.includes("energ") || key.includes("ptfeenerg")) return "energizedptfe"
+  if (key.includes("pctfe")) return "pctfe"
+  if (key.includes("fkm")) return "fkm"
+  if (key.includes("nbr")) return "nbr"
+  if (key.includes("vespel")) return "vespel"
+  if (key.includes("torlon")) return "torlon"
+  if (key.includes("peek")) return "peek"
+  return key
+}
+
+function classifyCompatibilityScore(score: CompatibilityScore | null): FluidCompatibilityStatus {
+  if (score === 2) return "Compatible"
+  if (score === 1) return "Acceptable"
+  if (score === 0 || score === -1) return "Not compatible"
+  return "To be confirmed"
 }
 
 function buildFluidCompatibilitySummary(
   product: PrismConfiguration,
   selectedFluid: PrismFluid | null
-) {
-  const selectedFluidName = displayValue(selectedFluid?.name)
-  const selectedFluidKey = normalizeCompatibilityText(selectedFluidName)
-  const sealingKey = normalizeCompatibilityText(product.sealing)
-  const bodyKey = normalizeCompatibilityText(product.bodyMaterial)
-  const valveInsertKey = normalizeCompatibilityText(product.valveInsert)
-  const seatKey = normalizeCompatibilityText(product.seat)
-  const isStainlessConstruction = bodyKey.includes("stainless") || bodyKey.includes("inox") || seatKey.includes("stainless") || seatKey.includes("inox")
-  const hasPctfeInsert = valveInsertKey.includes("pctfe")
-  const hasFkm = sealingKey.includes("fkm")
-  const hasNbr = sealingKey.includes("nbr")
+): FluidCompatibilitySummary {
+  const wettedMaterials = [product.bodyMaterial, product.sealing, product.valveInsert, product.seat]
+    .map(materialCompatibilityKey)
+    .filter(Boolean)
 
-  const standardCompatibleFluids = [
-    "Air",
-    "Argon",
-    "Azote",
-    "Butane",
-    "Dioxyde de carbone",
-    "Gaz naturel",
-    "Hélium",
-    "Hydrogène",
-  ]
-  const nbrCompatibleFluids = [
-    "Air",
-    "Azote",
-    "Butane",
-    "Dioxyde de carbone",
-    "Gaz naturel",
-    "Hélium",
-    "Hydrogène",
-  ]
-  const nbrNotCompatibleFluids = ["Air respirable", "Argon", "Oxygène"]
+  const compatibleFluids: string[] = []
+  const acceptableFluids: string[] = []
+  const notCompatibleFluids: string[] = []
+  const toBeConfirmedFluids: string[] = []
+  const statusByFluidKey = new Map<string, FluidCompatibilityStatus>()
 
-  let compatibleFluids = standardCompatibleFluids
-  let acceptableFluids = ["Oxygène"]
-  let notCompatibleFluids: string[] = []
-  let selectedFluidStatus: "Compatible" | "Acceptable" | "Not compatible" | "To be confirmed" = "To be confirmed"
+  fluidCompatibilityMatrix.forEach((fluid) => {
+    const scores = wettedMaterials.map((material) => fluid.values[material])
+    const validScores = scores.filter(
+      (score): score is CompatibilityScore =>
+        typeof score === "number" && Number.isFinite(score)
+    )
+    const worstScore =
+      validScores.length === wettedMaterials.length && validScores.length > 0
+        ? (Math.min(...validScores) as CompatibilityScore)
+        : null
+    const status = classifyCompatibilityScore(worstScore)
+    statusByFluidKey.set(fluid.key, status)
 
-  if (isStainlessConstruction && hasPctfeInsert && hasNbr) {
-    compatibleFluids = nbrCompatibleFluids
-    acceptableFluids = []
-    notCompatibleFluids = nbrNotCompatibleFluids
-  } else if (isStainlessConstruction && hasPctfeInsert && hasFkm) {
-    compatibleFluids = standardCompatibleFluids
-    acceptableFluids = ["Oxygène"]
-    notCompatibleFluids = []
-  }
+    if (status === "Compatible") compatibleFluids.push(fluid.label)
+    else if (status === "Acceptable") acceptableFluids.push(fluid.label)
+    else if (status === "Not compatible") notCompatibleFluids.push(fluid.label)
+    else toBeConfirmedFluids.push(fluid.label)
+  })
 
-  const compatibleKeys = compatibleFluids.map(normalizeCompatibilityText)
-  const acceptableKeys = acceptableFluids.map(normalizeCompatibilityText)
-  const notCompatibleKeys = notCompatibleFluids.map(normalizeCompatibilityText)
-
-  if (selectedFluidKey) {
-    if (compatibleKeys.includes(selectedFluidKey)) selectedFluidStatus = "Compatible"
-    else if (acceptableKeys.includes(selectedFluidKey)) selectedFluidStatus = "Acceptable"
-    else if (notCompatibleKeys.includes(selectedFluidKey)) selectedFluidStatus = "Not compatible"
-  }
+  const selectedFluidKey = normalizeCompatibilityKey(selectedFluid?.name)
+  const selectedFluidStatus = statusByFluidKey.get(selectedFluidKey) ?? "To be confirmed"
 
   return {
     selectedFluidStatus,
-    selectedStatusLabel: `Selected fluid status: ${selectedFluidStatus}`,
-    compatibleLabel: `Compatible fluids: ${joinFluidList(compatibleFluids)}`,
-    acceptableLabel: `Acceptable fluids: ${joinFluidList(acceptableFluids)}`,
-    notCompatibleLabel: `Not compatible fluids: ${joinFluidList(notCompatibleFluids)}`,
-    hasMaterialCompatibilityIssue: selectedFluidStatus === "Not compatible" || selectedFluidStatus === "To be confirmed",
+    compatibleFluids,
+    acceptableFluids,
+    notCompatibleFluids,
+    toBeConfirmedFluids,
+    compatibleLabel: `Compatible fluids: ${compatibleFluids.length > 0 ? compatibleFluids.join(", ") : "None"}`,
+    acceptableLabel: `Acceptable fluids: ${acceptableFluids.length > 0 ? acceptableFluids.join(", ") : "None"}`,
+    notCompatibleLabel: `Not compatible fluids: ${notCompatibleFluids.length > 0 ? notCompatibleFluids.join(", ") : "None"}`,
   }
 }
 
@@ -1914,7 +2283,7 @@ function ProductDatasheet({
             <div className="datasheet-grid grid grid-cols-2 gap-4">
               <DatasheetLine label="Selected fluid" value={displayValue(selectedFluid?.name)} />
               <DatasheetLine label="DN" value={displayValue(product.dn)} />
-              <DatasheetLine label="Temperature range" value={normalizeTemperatureLabel(product.workingTemp, `${sizingSummary.minTemperature} / ${sizingSummary.maxTemperature} °C`)} />
+              <DatasheetLine label="Temperature range" value={displayValue(product.workingTemp, `${sizingSummary.minTemperature} / ${sizingSummary.maxTemperature} °C`)} />
               <DatasheetLine label="Section flow" value={displayNumber(sizingSummary.minRequiredSeatSize, " mm")} />
               <DatasheetLine label="Max inlet pressure" value={displayValue(product.mwp)} />
               <DatasheetLine label="Leakage rate" value={displayValue(product.leakageRate || product.leakageRateInternal || product.leakageRateExternal, "In accordance with selected sealing")} />
@@ -1923,10 +2292,8 @@ function ProductDatasheet({
             </div>
             <div className="mt-3 rounded-lg border border-slate-300 bg-slate-50 p-3">
               <p className="text-[11px] font-black text-slate-500">Fluid compatibility</p>
-              <p className="mt-1 text-xs font-black text-slate-800">{datasheetFluidCompatibilitySummary.selectedStatusLabel}</p>
-              <p className="mt-1 text-xs font-black text-emerald-700">{datasheetFluidCompatibilitySummary.compatibleLabel}</p>
+              <p className="mt-1 text-xs font-black text-slate-800">{datasheetFluidCompatibilitySummary.compatibleLabel}</p>
               <p className="mt-1 text-xs font-black text-amber-700">{datasheetFluidCompatibilitySummary.acceptableLabel}</p>
-              <p className="mt-1 text-xs font-black text-rose-700">{datasheetFluidCompatibilitySummary.notCompatibleLabel}</p>
             </div>
           </DatasheetSection>
 
@@ -1954,6 +2321,7 @@ function ProductDatasheet({
               <DatasheetLine label="Fluid density" value={computedFluid ? `${computedFluid.density} kg/Nm3` : "-"} />
               <DatasheetLine label="Required seat size" value={displayNumber(sizingSummary.minRequiredSeatSize, " mm")} />
               <DatasheetLine label="Required port" value={displayValue(sizingSummary.requiredConnector.label)} />
+              <DatasheetLine label="Recommended DN" value={dnSizingProfile.recommendedDnLabel} />
               <DatasheetLine label="Selected DN" value={displayValue(product.dn)} />
               <DatasheetLine label="Regulation / setting" value={`${displayValue(product.regulation)} / ${displayValue(product.setting)}`} />
             </div>
@@ -2203,6 +2571,7 @@ function RangeMap({
             Setting range
           </span>
           <span className="rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-3 py-2 text-cyan-50">
+            <span className="text-cyan-100/70">Recommended DN</span>
             <span className="ml-2 font-black">{recommendedDn}</span>
           </span>
         </div>
