@@ -1789,6 +1789,11 @@ function ProductDatasheet({
     sizingSummary
   )
 
+  const datasheetFluidCompatibilitySummary = buildFluidCompatibilitySummary(
+    product,
+    selectedFluid
+  )
+
   return (
     <div className="mt-8 rounded-2xl border border-white/10 bg-[#10112b] p-5">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
