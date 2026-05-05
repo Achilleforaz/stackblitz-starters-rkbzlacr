@@ -145,6 +145,32 @@ function numberFromText(value: string) {
   return match ? Number(match[0]) : 0
 }
 
+
+function parsePressureRangeBar(value: string) {
+  const normalized = String(value || "")
+    .replace(/,/g, ".")
+    .replace(/–|—/g, "-")
+
+  const numbers = normalized.match(/\d+(?:\.\d+)?/g)?.map(Number).filter(Number.isFinite) || []
+
+  if (numbers.length >= 2) {
+    const min = Math.min(numbers[0], numbers[1])
+    const max = Math.max(numbers[0], numbers[1])
+    return { min, max, label: `${formatBarValue(min)}-${formatBarValue(max)} bar` }
+  }
+
+  if (numbers.length === 1) {
+    return { min: 0, max: numbers[0], label: `0-${formatBarValue(numbers[0])} bar` }
+  }
+
+  return { min: 0, max: 0, label: "Setting -" }
+}
+
+function formatBarValue(value: number) {
+  if (!Number.isFinite(value)) return "-"
+  return Number.isInteger(value) ? String(value) : value.toFixed(1)
+}
+
 function getPortBoreSizeMm(port: string) {
   const normalized = String(port).toLowerCase().replace(/\s+/g, " ").trim()
 
@@ -1970,16 +1996,31 @@ function RangeMap({
         row.products.reduce((rangeMap, product) => {
           const mwp = numberFromText(product.mwp)
           const port = getPortDisplayLabel(product.port)
-          const key = `${mwp}__${port}`
-          const current = rangeMap.get(key) || { key, mwp, port, count: 0 }
+          const settingRange = parsePressureRangeBar(product.setting)
+          const key = `${mwp}__${settingRange.min}__${settingRange.max}__${port}`
+          const current = rangeMap.get(key) || {
+            key,
+            mwp,
+            port,
+            settingMin: settingRange.min,
+            settingMax: settingRange.max,
+            settingLabel: settingRange.label,
+            count: 0,
+          }
           current.count += 1
           rangeMap.set(key, current)
           return rangeMap
-        }, new Map<string, { key: string; mwp: number; port: string; count: number }>()),
+        }, new Map<string, { key: string; mwp: number; port: string; settingMin: number; settingMax: number; settingLabel: string; count: number }>()),
       )
         .map(([, range]) => range)
         .filter((range) => range.mwp > 0)
-        .sort((a, b) => a.mwp - b.mwp || a.port.localeCompare(b.port))
+        .sort(
+          (a, b) =>
+            a.settingMin - b.settingMin ||
+            a.settingMax - b.settingMax ||
+            a.mwp - b.mwp ||
+            a.port.localeCompare(b.port)
+        )
 
       const ports = Array.from(new Set(ranges.map((range) => range.port))).sort((a, b) => {
         return numberFromText(a) - numberFromText(b) || a.localeCompare(b)
@@ -2013,8 +2054,18 @@ function RangeMap({
         <div>
           <h3 className="text-xl font-black tracking-tight">Standard range map</h3>
           <p className="mt-1 max-w-3xl text-sm text-gray-300">
-            Standard PR coverage after sizing and filters. X axis = MWP, Y axis = DN. One row = one PR model. Several segments on one row = several available pressure / port ranges.
+            Standard PR coverage after sizing and filters. X axis = pressure in bar. Pale track = inlet MWP capability, colored segment = regulation / setting pressure range.
           </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px] font-bold text-white/55">
+            <span className="inline-flex items-center gap-2">
+              <span className="h-px w-10 rounded-full bg-white/25" />
+              MWP limit
+            </span>
+            <span className="inline-flex items-center gap-2">
+              <span className="h-2 w-10 rounded-full border border-cyan-300/40 bg-cyan-400/25" />
+              Setting pressure range
+            </span>
+          </div>
         </div>
         <button
           type="button"
@@ -2050,7 +2101,7 @@ function RangeMap({
                   const colorIndex = modelColorIndex.get(row.modelLabel) || 0
                   const accentClass = rangeAccentClasses[colorIndex % rangeAccentClasses.length]
                   const laneCount = Math.max(1, row.ranges.length)
-                  const rowHeight = Math.max(42, 26 + laneCount * 7)
+                  const rowHeight = Math.max(46, 28 + laneCount * 10)
 
                   return (
                     <div
@@ -2073,8 +2124,11 @@ function RangeMap({
 
                         <div className="relative h-full min-h-[28px]">
                           {row.ranges.map((range, index) => {
-                            const width = `${Math.max(3, Math.min(100, (range.mwp / maxMwp) * 100))}%`
-                            const top = 4 + index * 7
+                            const mwpWidth = `${Math.max(3, Math.min(100, (range.mwp / maxMwp) * 100))}%`
+                            const settingStart = Math.max(0, Math.min(100, (range.settingMin / maxMwp) * 100))
+                            const settingEnd = Math.max(settingStart + 1, Math.min(100, (range.settingMax / maxMwp) * 100))
+                            const settingWidth = `${Math.max(2.5, settingEnd - settingStart)}%`
+                            const top = 4 + index * 10
 
                             return (
                               <div
@@ -2083,9 +2137,14 @@ function RangeMap({
                                 style={{ top }}
                               >
                                 <div
-                                  className={`h-1.5 rounded-full border ${accentClass}`}
-                                  style={{ width }}
-                                  title={`${row.modelLabel} · DN ${row.dn} · MWP ${range.mwp} bar · Port ${range.port}`}
+                                  className="absolute left-0 top-[3px] h-px rounded-full bg-white/18"
+                                  style={{ width: mwpWidth }}
+                                  title={`${row.modelLabel} · DN ${row.dn} · MWP capability ${range.mwp} bar`}
+                                />
+                                <div
+                                  className={`absolute h-2 rounded-full border ${accentClass}`}
+                                  style={{ left: `${settingStart}%`, width: settingWidth }}
+                                  title={`${row.modelLabel} · DN ${row.dn} · Setting ${range.settingLabel} · MWP ${range.mwp} bar · Port ${range.port}`}
                                 />
                               </div>
                             )
@@ -2117,7 +2176,7 @@ function RangeMap({
       </div>
 
       <div className="mt-3 text-xs text-gray-400">
-        Exact article references, material and options remain hidden until final selection. Hover a segment to see its MWP and port.
+Exact article references, material and options remain hidden until final selection. Hover a segment to see setting range, MWP and port.
       </div>
     </div>
   )
