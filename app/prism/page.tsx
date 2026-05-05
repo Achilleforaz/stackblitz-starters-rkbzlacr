@@ -672,10 +672,7 @@ export default function PrismPage() {
       sizingSummary
     )
     const tableConditions = reportConditions.slice(0, 5)
-    const quantity = normalizeOrderQuantity(orderQuantity)
-    const unitPrice = canViewPrices ? formatPdfPrice(getProductPrice(product)) : "Protected"
-    const totalPrice = canViewPrices ? formatPdfPrice(getProductTotalPrice(product)) : "Protected"
-    const distributorDiscount = getDistributorDiscount(product.id, quantity)
+    const fluidCompatibilitySummary = buildFluidCompatibilitySummary(product, selectedFluid)
 
     const pdf = new jsPDF({
       orientation: "landscape",
@@ -748,6 +745,28 @@ export default function PrismPage() {
       text(value, x + 31, y, { size: 6.3, bold: true, maxWidth: w - 32 })
       stroke(lineColor)
       pdf.line(x, y + 2.8, x + w, y + 2.8)
+    }
+
+    function compatibilityCard(x: number, y: number, w: number) {
+      fill([248, 250, 252])
+      stroke(lineColor)
+      pdf.roundedRect(x, y, w, 9.5, 1.5, 1.5, "FD")
+      text("Fluid compatibility", x + 2.5, y + 3.6, {
+        size: 5.7,
+        bold: true,
+        color: muted,
+      })
+      text(fluidCompatibilitySummary.compatibleLabel, x + 38, y + 3.6, {
+        size: 5.7,
+        bold: true,
+        maxWidth: w - 42,
+      })
+      text(fluidCompatibilitySummary.acceptableLabel, x + 38, y + 7.2, {
+        size: 5.4,
+        bold: true,
+        color: [180, 83, 9],
+        maxWidth: w - 42,
+      })
     }
 
     function metricCard(label: string, value: unknown, x: number, y: number, w: number, h = 15) {
@@ -850,7 +869,7 @@ export default function PrismPage() {
     const colW = (contentW - colGap * 2) / 3
 
     sectionTitle("Technical specification", contentX, 42, contentW)
-    infoLine("Fluid compatibility", selectedFluid?.name, contentX, 53, colW)
+    infoLine("Selected fluid", selectedFluid?.name, contentX, 53, colW)
     infoLine("Selected DN", product.dn, contentX + colW + colGap, 53, colW)
     infoLine("Max inlet pressure", product.mwp, contentX + (colW + colGap) * 2, 53, colW)
     infoLine("Temperature range", displayValue(product.workingTemp, `${sizingSummary.minTemperature} / ${sizingSummary.maxTemperature} C`), contentX, 62, colW)
@@ -859,8 +878,9 @@ export default function PrismPage() {
     infoLine("Outlet pressure range", `${Math.min(...reportConditions.map((item) => item.outletPressure || 0))} / ${Math.max(...reportConditions.map((item) => item.outletPressure || 0))} bar g`, contentX, 71, colW)
     infoLine("In & outlet port", product.port, contentX + colW + colGap, 71, colW)
     infoLine("Recommended DN", dnSizingProfile.recommendedDnLabel, contentX + (colW + colGap) * 2, 71, colW)
+    compatibilityCard(contentX, 77.5, contentW)
 
-    const blockY = 85
+    const blockY = 90
     const halfW = (contentW - colGap) / 2
     sectionTitle("Materials", contentX, blockY, halfW)
     sectionTitle("Product features", contentX + halfW + colGap, blockY, halfW)
@@ -908,12 +928,6 @@ export default function PrismPage() {
       maxWidth: contentW - 165,
     })
 
-    sectionTitle("Price summary", contentX, 184.5, 156)
-    const priceY = 193
-    metricCard("Quantity", quantity, contentX, priceY, 30, 11)
-    metricCard(showDistributorPrices ? "Distributor unit price" : "Unit price", unitPrice, contentX + 37, priceY, 44, 11)
-    metricCard("Total price", totalPrice, contentX + 88, priceY, 44, 11)
-    metricCard("Discount", showDistributorPrices && canViewPrices ? `${distributorDiscount}%` : "-", contentX + 139, priceY, 17, 11)
 
     text("PRISM - automatically generated datasheet", margin + 5, pageHeight - margin - 3.5, {
       size: 5.7,
@@ -1439,7 +1453,6 @@ export default function PrismPage() {
           <RangeMap
             products={filteredConfigurations}
             recommendedDn={sizingApplied ? dnSizingProfile.recommendedDnLabel : "Apply sizing"}
-            selectedDn={displayedFilters.dn}
           />
 
           {selectedConfiguration && (
@@ -1630,6 +1643,39 @@ function displayNumber(value: unknown, suffix = "") {
   return `${rounded}${suffix}`
 }
 
+function buildFluidCompatibilitySummary(
+  product: PrismConfiguration,
+  selectedFluid: PrismFluid | null
+) {
+  const materialSignature = [
+    product.bodyMaterial,
+    product.sealing,
+    product.valveInsert,
+    product.seat,
+  ]
+    .join(" ")
+    .toLowerCase()
+
+  const selectedFluidName = displayValue(selectedFluid?.name)
+  const isStandardStainlessFkmPctfe =
+    (materialSignature.includes("stainless") || materialSignature.includes("inox")) &&
+    materialSignature.includes("fkm") &&
+    materialSignature.includes("pctfe")
+
+  if (!isStandardStainlessFkmPctfe) {
+    return {
+      compatibleLabel: `Compatible: ${selectedFluidName}`,
+      acceptableLabel: "Acceptable: to be confirmed with selected wetted materials",
+    }
+  }
+
+  return {
+    compatibleLabel:
+      "Compatible: Air, Argon, Azote, Butane, Dioxyde de carbone, Gaz naturel, Hélium, Hydrogène",
+    acceptableLabel: "Acceptable: Oxygène",
+  }
+}
+
 type DatasheetSizingSummary = {
   maxInletPressure: number
   minTemperature: number
@@ -1785,7 +1831,7 @@ function ProductDatasheet({
 
           <DatasheetSection title="Technical specification">
             <div className="datasheet-grid grid grid-cols-2 gap-4">
-              <DatasheetLine label="Fluid compatibility" value={displayValue(selectedFluid?.name)} />
+              <DatasheetLine label="Selected fluid" value={displayValue(selectedFluid?.name)} />
               <DatasheetLine label="DN" value={displayValue(product.dn)} />
               <DatasheetLine label="Temperature range" value={displayValue(product.workingTemp, `${sizingSummary.minTemperature} / ${sizingSummary.maxTemperature} °C`)} />
               <DatasheetLine label="Section flow" value={displayNumber(sizingSummary.minRequiredSeatSize, " mm")} />
@@ -1965,24 +2011,14 @@ function getPortDisplayLabel(port: string) {
   return value || "Port -"
 }
 
-function normalizeDnLabel(value: string | undefined) {
-  return String(value || "")
-    .replace(/\s+/g, "")
-    .replace(/mm$/i, "")
-    .trim()
-}
-
 function RangeMap({
   products,
   recommendedDn,
-  selectedDn,
 }: {
   products: PrismConfiguration[]
   recommendedDn: string
-  selectedDn?: string
 }) {
   const maxMwp = 1000
-  const [hoveredModel, setHoveredModel] = useState<string | null>(null)
 
   const rows = Array.from(
     products.reduce((dnMap, product) => {
@@ -2059,23 +2095,18 @@ function RangeMap({
     }
   })
 
-  const selectedDnNormalized = normalizeDnLabel(selectedDn)
-  const recommendedDnNormalized = normalizeDnLabel(recommendedDn)
-  const focusedDnNormalized = selectedDnNormalized || recommendedDnNormalized
-  const hasFocusedDn = rows.some((row) => normalizeDnLabel(row.dn) === focusedDnNormalized)
-
   return (
-    <div className="mb-7 rounded-[1.5rem] border border-white/10 bg-[#10112b]/88 p-4 shadow-2xl shadow-black/10 transition-all duration-300">
+    <div className="mb-7 rounded-[1.5rem] border border-white/10 bg-[#10112b]/88 p-4 shadow-2xl shadow-black/10">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-lg font-black tracking-tight">Standard range map</h3>
           <p className="mt-1 max-w-3xl text-xs text-gray-300">
-            X axis = pressure in bar. Grey line = MWP limit. Colored blocks = available regulation / setting ranges.
+            X axis = pressure in bar. Thin pale line = MWP limit. Colored blocks = available regulation / setting ranges.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-[10px] font-bold text-white/60">
           <span className="inline-flex items-center gap-2">
-            <span className="h-[3px] w-10 rounded-full bg-slate-300/45 shadow-[0_0_10px_rgba(226,232,240,0.18)]" />
+            <span className="h-[2px] w-10 rounded-full bg-white/25" />
             MWP
           </span>
           <span className="inline-flex items-center gap-2">
@@ -2089,7 +2120,7 @@ function RangeMap({
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#242643] transition-all duration-300">
+      <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#242643]">
         <div className="grid grid-cols-[62px_76px_1fr_64px] border-b border-white/10 bg-[#171832] text-[9px] font-black uppercase tracking-[0.13em] text-white/55">
           <div className="border-r border-white/10 px-2 py-2.5">DN</div>
           <div className="border-r border-white/10 px-2 py-2.5">Model</div>
@@ -2104,120 +2135,105 @@ function RangeMap({
         </div>
 
         <div>
-          {Array.from(rowsByDn.entries()).map(([dn, dnRows]) => {
-            const dnMatchesFocus = !hasFocusedDn || normalizeDnLabel(dn) === focusedDnNormalized
-            const dnIsDimmed = hasFocusedDn && !dnMatchesFocus && !hoveredModel
+          {Array.from(rowsByDn.entries()).map(([dn, dnRows]) => (
+            <div key={dn} className="grid grid-cols-[62px_1fr] border-b border-white/10 last:border-b-0">
+              <div className="flex items-center justify-center border-r border-white/10 bg-white/[0.035] px-1.5 text-center text-xs font-black text-white">
+                {dn}
+              </div>
+              <div>
+                {dnRows.map((row, rowIndex) => {
+                  const colorIndex = modelColorIndex.get(row.modelLabel) || 0
+                  const accentClass = rangeAccentClasses[colorIndex % rangeAccentClasses.length]
+                  const laneCount = Math.max(1, row.ranges.length)
+                  const rowHeight = Math.max(38, 24 + laneCount * 9)
 
-            return (
-              <div
-                key={dn}
-                className={`grid grid-cols-[62px_1fr] border-b border-white/10 last:border-b-0 transition-all duration-300 ${dnIsDimmed ? "opacity-35" : "opacity-100"}`}
-              >
-                <div className={`flex items-center justify-center border-r border-white/10 px-1.5 text-center text-xs font-black transition-all duration-300 ${dnMatchesFocus ? "bg-cyan-400/10 text-cyan-50" : "bg-white/[0.035] text-white"}`}>
-                  {dn}
-                </div>
-                <div>
-                  {dnRows.map((row, rowIndex) => {
-                    const colorIndex = modelColorIndex.get(row.modelLabel) || 0
-                    const accentClass = rangeAccentClasses[colorIndex % rangeAccentClasses.length]
-                    const laneCount = Math.max(1, row.ranges.length)
-                    const rowHeight = Math.max(38, 24 + laneCount * 9)
-                    const isHoveredModel = hoveredModel === row.modelLabel
-                    const isDimmedByHover = Boolean(hoveredModel && !isHoveredModel)
-                    const isDimmedByDn = hasFocusedDn && !dnMatchesFocus && !hoveredModel
-                    const rowOpacity = isDimmedByHover || isDimmedByDn ? "opacity-30" : "opacity-100"
-                    const rowHighlight = isHoveredModel ? "bg-cyan-400/[0.075] shadow-[inset_3px_0_0_rgba(34,211,238,0.9)]" : ""
+                  return (
+                    <div
+                      key={row.key}
+                      className={`grid grid-cols-[76px_1fr_64px] ${rowIndex > 0 ? "border-t border-white/10" : ""}`}
+                      style={{ minHeight: rowHeight }}
+                    >
+                      <div className="flex items-center border-r border-white/10 px-2 py-1.5 text-xs font-black text-cyan-50">
+                        {row.modelLabel}
+                      </div>
 
-                    return (
-                      <div
-                        key={row.key}
-                        onMouseEnter={() => setHoveredModel(row.modelLabel)}
-                        onMouseLeave={() => setHoveredModel(null)}
-                        className={`grid grid-cols-[76px_1fr_64px] transition-all duration-300 ease-out ${rowIndex > 0 ? "border-t border-white/10" : ""} ${rowOpacity} ${rowHighlight}`}
-                        style={{ minHeight: rowHeight }}
-                      >
-                        <div className={`flex items-center border-r border-white/10 px-2 py-1.5 text-xs font-black transition-colors duration-300 ${isHoveredModel ? "text-white" : "text-cyan-50"}`}>
-                          {row.modelLabel}
-                        </div>
+                      <div className="relative px-3 py-1.5">
+                        {ticks.slice(1, -1).map((tick) => (
+                          <div
+                            key={tick}
+                            className="pointer-events-none absolute inset-y-1.5 w-px bg-white/10"
+                            style={{ left: `${(tick / maxMwp) * 100}%` }}
+                          />
+                        ))}
 
-                        <div className="relative px-3 py-1.5">
-                          {ticks.slice(1, -1).map((tick) => (
-                            <div
-                              key={tick}
-                              className="pointer-events-none absolute inset-y-1.5 w-px bg-white/10"
-                              style={{ left: `${(tick / maxMwp) * 100}%` }}
-                            />
-                          ))}
+                        <div className="relative h-full min-h-[24px]">
+                          {row.ranges.map((range, index) => {
+                            const mwpWidth = `${Math.max(3, Math.min(100, (range.mwp / maxMwp) * 100))}%`
+                            const settingStart = Math.max(0, Math.min(100, (range.settingMin / maxMwp) * 100))
+                            const settingEnd = Math.max(settingStart + 1, Math.min(100, (range.settingMax / maxMwp) * 100))
+                            const settingWidth = `${Math.max(2.5, settingEnd - settingStart)}%`
+                            const top = 3 + index * 9
 
-                          <div className="relative h-full min-h-[24px] transition-all duration-300">
-                            {row.ranges.map((range, index) => {
-                              const mwpWidth = `${Math.max(3, Math.min(100, (range.mwp / maxMwp) * 100))}%`
-                              const settingStart = Math.max(0, Math.min(100, (range.settingMin / maxMwp) * 100))
-                              const settingEnd = Math.max(settingStart + 1, Math.min(100, (range.settingMax / maxMwp) * 100))
-                              const settingWidth = `${Math.max(2.5, settingEnd - settingStart)}%`
-                              const top = 3 + index * 9
-
-                              return (
+                            return (
+                              <div
+                                key={range.key}
+                                className="absolute left-0 right-0"
+                                style={{ top }}
+                              >
                                 <div
-                                  key={range.key}
-                                  className="absolute left-0 right-0 transition-all duration-300 ease-out"
-                                  style={{ top }}
+                                  className="absolute left-0 top-[5px] h-[2px] rounded-full bg-white/18"
+                                  style={{ width: mwpWidth }}
+                                  title={`${row.modelLabel} · DN ${row.dn} · MWP ${range.mwp} bar`}
+                                />
+                                <span
+                                  className="absolute top-[1px] -translate-y-full rounded bg-[#242643]/90 px-1 text-[8px] font-black leading-none text-white/45"
+                                  style={{ left: mwpWidth }}
+                                  title={`MWP ${range.mwp} bar`}
                                 >
-                                  <div
-                                    className="absolute left-0 top-[5px] h-[3px] rounded-full bg-slate-300/40 shadow-[0_0_8px_rgba(226,232,240,0.18)] transition-all duration-300"
-                                    style={{ width: mwpWidth }}
-                                    title={`${row.modelLabel} · DN ${row.dn} · MWP ${range.mwp} bar`}
-                                  />
-                                  <span
-                                    className={`absolute top-[1px] -translate-y-full rounded bg-[#242643]/90 px-1 text-[8px] font-black leading-none transition-opacity duration-300 ${isHoveredModel ? "text-white/65 opacity-100" : "text-white/35 opacity-70"}`}
-                                    style={{ left: mwpWidth }}
-                                    title={`MWP ${range.mwp} bar`}
-                                  >
-                                    {range.mwp}
-                                  </span>
-                                  <div
-                                    className={`absolute h-3 rounded-full border transition-all duration-300 ease-out ${accentClass} ${isHoveredModel ? "scale-y-110 shadow-lg brightness-125" : ""}`}
-                                    style={{ left: `${settingStart}%`, width: settingWidth }}
-                                    title={`${row.modelLabel} · DN ${row.dn} · Setting ${range.settingLabel} · MWP ${range.mwp} bar · Port ${range.port}`}
-                                  />
-                                  <span
-                                    className={`pointer-events-none absolute top-[1px] -translate-y-full whitespace-nowrap rounded bg-[#242643]/90 px-1 text-[8px] font-black leading-none transition-opacity duration-300 ${isHoveredModel ? "text-white opacity-100" : "text-white/65 opacity-80"}`}
-                                    style={{ left: `${settingStart}%` }}
-                                  >
-                                    {range.settingLabel}
-                                  </span>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-1 border-l border-white/10 px-1.5 py-1.5 transition-all duration-300">
-                          {row.ports.slice(0, 2).map((port) => (
-                            <span
-                              key={`${row.key}-${port}`}
-                              className={`rounded-full border px-1.5 py-0.5 text-[9px] font-bold transition-colors duration-300 ${isHoveredModel ? "border-cyan-200/25 bg-cyan-400/10 text-cyan-50" : "border-white/10 bg-white/[0.055] text-white/65"}`}
-                              title={`Port ${port}`}
-                            >
-                              {port}
-                            </span>
-                          ))}
-                          {row.ports.length > 2 && (
-                            <span className="text-[9px] font-bold text-white/45">+{row.ports.length - 2}</span>
-                          )}
+                                  {range.mwp}
+                                </span>
+                                <div
+                                  className={`absolute h-3 rounded-full border ${accentClass}`}
+                                  style={{ left: `${settingStart}%`, width: settingWidth }}
+                                  title={`${row.modelLabel} · DN ${row.dn} · Setting ${range.settingLabel} · MWP ${range.mwp} bar · Port ${range.port}`}
+                                />
+                                <span
+                                  className="pointer-events-none absolute top-[1px] -translate-y-full whitespace-nowrap rounded bg-[#242643]/90 px-1 text-[8px] font-black leading-none text-white/70"
+                                  style={{ left: `${settingStart}%` }}
+                                >
+                                  {range.settingLabel}
+                                </span>
+                              </div>
+                            )
+                          })}
                         </div>
                       </div>
-                    )
-                  })}
-                </div>
+
+                      <div className="flex flex-wrap items-center gap-1 border-l border-white/10 px-1.5 py-1.5">
+                        {row.ports.slice(0, 2).map((port) => (
+                          <span
+                            key={`${row.key}-${port}`}
+                            className="rounded-full border border-white/10 bg-white/[0.055] px-1.5 py-0.5 text-[9px] font-bold text-white/65"
+                            title={`Port ${port}`}
+                          >
+                            {port}
+                          </span>
+                        ))}
+                        {row.ports.length > 2 && (
+                          <span className="text-[9px] font-bold text-white/45">+{row.ports.length - 2}</span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
-            )
-          })}
+            </div>
+          ))}
         </div>
       </div>
 
       <div className="mt-2 text-[11px] text-gray-400">
-Hover a segment to highlight the full model line. Selecting a DN fades the other DN lines while keeping the map structure readable.
+Hover a segment to see the exact setting range, MWP and port. Article reference, material and options stay hidden until final selection.
       </div>
     </div>
   )
