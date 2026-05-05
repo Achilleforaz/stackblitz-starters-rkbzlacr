@@ -1062,6 +1062,13 @@ export default function PrismPage() {
     return "Oversized"
   }
 
+  const datasheetFluidCompatibilitySummary = selectedConfiguration
+    ? buildFluidCompatibilitySummary(selectedConfiguration, selectedFluid)
+    : {
+        compatibleLabel: `Compatible: ${displayValue(selectedFluid?.name)}`,
+        acceptableLabel: "Acceptable: to be confirmed with selected wetted materials",
+      }
+
   return (
     <main className="min-h-screen overflow-hidden bg-[#171838] px-4 py-6 text-white sm:px-6 lg:px-8">
       <div className="pointer-events-none fixed inset-0 -z-10">
@@ -1843,8 +1850,8 @@ function ProductDatasheet({
             </div>
             <div className="mt-3 rounded-lg border border-slate-300 bg-slate-50 p-3">
               <p className="text-[11px] font-black text-slate-500">Fluid compatibility</p>
-              <p className="mt-1 text-xs font-black text-slate-800">{fluidCompatibilitySummary.compatibleLabel}</p>
-              <p className="mt-1 text-xs font-black text-amber-700">{fluidCompatibilitySummary.acceptableLabel}</p>
+              <p className="mt-1 text-xs font-black text-slate-800">{datasheetFluidCompatibilitySummary.compatibleLabel}</p>
+              <p className="mt-1 text-xs font-black text-amber-700">{datasheetFluidCompatibilitySummary.acceptableLabel}</p>
             </div>
           </DatasheetSection>
 
