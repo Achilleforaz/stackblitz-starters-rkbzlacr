@@ -887,20 +887,26 @@ export default function PrismPage() {
 
     function drawCompatibilityPanel(x: number, y: number, w: number, h: number) {
       panelBox(x, y, w, h, white, line, 3)
-      write("FLUID COMPATIBILITY", x + 4, y + 6, { size: 6.8, bold: true, color: navy })
-      write("Compatibility is derived from wetted materials", x + 4, y + 10.5, { size: 5.2, color: muted })
+      write("FLUID COMPATIBILITY", x + 4, y + 6, { size: 6.7, bold: true, color: navy })
+      write("Compatibility is derived from selected wetted materials", x + 4, y + 10.5, { size: 5.1, color: muted })
+
       const selectedStatus = fluidCompatibilitySummary.selectedFluidStatus
       const selectedTone = toneForStatus(selectedStatus)
-      write("Selected fluid", x + 4, y + 18, { size: 5.7, bold: true, color: muted })
-      write(displayPdfValue(selectedFluid?.name), x + 39, y + 18.2, { size: 7.1, bold: true, color: navy, maxWidth: 42 })
-      write("Status", x + 89, y + 18, { size: 5.7, bold: true, color: muted })
-      statusPill(selectedStatus, x + 106, y + 14, 34, selectedTone)
-      write("Compatible", x + 4, y + 28, { size: 5.5, bold: true, color: ok })
-      write(fluidCompatibilitySummary.compatibleFluids.length > 0 ? fluidCompatibilitySummary.compatibleFluids.join(", ") : "None", x + 27, y + 28, { size: 5.4, color: slate, maxWidth: w - 31, lineHeightFactor: 1.08 })
-      write("Acceptable", x + 4, y + 39, { size: 5.5, bold: true, color: warning })
-      write(fluidCompatibilitySummary.acceptableFluids.length > 0 ? fluidCompatibilitySummary.acceptableFluids.join(", ") : "None", x + 27, y + 39, { size: 5.4, color: slate, maxWidth: 58, lineHeightFactor: 1.08 })
-      write("Not compatible", x + 95, y + 39, { size: 5.5, bold: true, color: danger })
-      write(fluidCompatibilitySummary.notCompatibleFluids.length > 0 ? fluidCompatibilitySummary.notCompatibleFluids.join(", ") : "None", x + 130, y + 39, { size: 5.4, color: slate, maxWidth: w - 134, lineHeightFactor: 1.08 })
+      const compatibleText = fluidCompatibilitySummary.compatibleFluids.length > 0 ? fluidCompatibilitySummary.compatibleFluids.join(", ") : "None"
+      const acceptableText = fluidCompatibilitySummary.acceptableFluids.length > 0 ? fluidCompatibilitySummary.acceptableFluids.join(", ") : "None"
+      const notCompatibleText = fluidCompatibilitySummary.notCompatibleFluids.length > 0 ? fluidCompatibilitySummary.notCompatibleFluids.join(", ") : "None"
+
+      write("Selected fluid", x + 4, y + 17.5, { size: 5.5, bold: true, color: muted })
+      write(displayPdfValue(selectedFluid?.name), x + 35, y + 17.7, { size: 6.8, bold: true, color: navy, maxWidth: 45 })
+      write("Status", x + 86, y + 17.5, { size: 5.5, bold: true, color: muted })
+      statusPill(selectedStatus, x + 101, y + 13.9, 32, selectedTone)
+
+      write("Compatible", x + 4, y + 27.3, { size: 5.3, bold: true, color: ok })
+      write(compatibleText, x + 28, y + 27.3, { size: 5.15, color: slate, maxWidth: w - 32, lineHeightFactor: 1.03 })
+      write("Acceptable", x + 4, y + 35.8, { size: 5.3, bold: true, color: warning })
+      write(acceptableText, x + 28, y + 35.8, { size: 5.15, color: slate, maxWidth: 57, lineHeightFactor: 1.03 })
+      write("Not compatible", x + 96, y + 35.8, { size: 5.3, bold: true, color: danger })
+      write(notCompatibleText, x + 130, y + 35.8, { size: 5.15, color: slate, maxWidth: w - 134, lineHeightFactor: 1.03 })
     }
 
     function drawMatrixTable(title: string, x: number, y: number, w: number, labelW: number, rows: Array<[string, unknown[]]>, rowH = 7.2) {
@@ -969,10 +975,26 @@ export default function PrismPage() {
       const colors = toneColors(finalTone)
       const title = finalTone === "danger" ? "Configuration to review before customer release" : finalTone === "warning" ? "Configuration validated with attention point" : "Configuration is within safe operating limits"
       const body = finalTone === "danger" ? "Sizing or material compatibility requires review. Do not release as fully validated without engineering confirmation." : finalTone === "warning" ? "Sizing is acceptable, but at least one item requires attention before final release." : "The selected pressure regulator is suitable for the requested operating conditions."
+      const highestUtilization = Math.max(...tableConditions.map((item) => Number(item.utilizationPercent) || 0))
+      const minimumMargin = Math.min(...tableConditions.map((item) => Number(item.capacityMarginPercent) || 0))
       panelBox(x, y, w, h, colors.bg, colors.border, 3)
       statusPill(finalTone === "ok" ? "VALIDATED" : finalTone === "warning" ? "WARNING" : "TO REVIEW", x + 5, y + 6, 31, finalTone)
-      write(title, x + 43, y + 10, { size: 8, bold: true, color: colors.text, maxWidth: w - 49 })
-      write(body, x + 43, y + 17.5, { size: 6, color: slate, maxWidth: w - 49 })
+      write(title, x + 43, y + 10, { size: 7.6, bold: true, color: colors.text, maxWidth: w - 49 })
+      write(body, x + 43, y + 17.2, { size: 5.7, color: slate, maxWidth: w - 49 })
+
+      const metricY = y + 27.5
+      const metricW = (w - 16) / 4
+      const metrics: Array<[string, string]> = [
+        ["Highest utilization", `${displayPdfNumber(highestUtilization, "%")}`],
+        ["Minimum margin", `${displayPdfNumber(minimumMargin, "%")}`],
+        ["Fluid status", displayPdfValue(fluidCompatibilitySummary.selectedFluidStatus)],
+        ["Sizing status", finalTone === "ok" ? "Validated" : finalTone === "warning" ? "Warning" : "To review"],
+      ]
+      metrics.forEach(([label, value], index) => {
+        const mx = x + 5 + index * metricW
+        write(label, mx, metricY, { size: 5.1, bold: true, color: muted, maxWidth: metricW - 3 })
+        write(value, mx, metricY + 6, { size: 6.2, bold: true, color: colors.text, maxWidth: metricW - 3 })
+      })
     }
 
     const sketchAsset = await loadSketchAsset()
@@ -995,13 +1017,13 @@ export default function PrismPage() {
     ], margin, topY + 13, leftW, 58)
 
     sectionTitle("Product view", margin + leftW + 7, topY, rightW)
-    drawProductSketch(sketchAsset, margin + leftW + 7, topY + 13, rightW, 88)
+    drawProductSketch(sketchAsset, margin + leftW + 7, topY + 13, rightW, 70)
 
-    const compatY = topY + 82
+    const compatY = topY + 86
     sectionTitle("Fluid compatibility", margin, compatY, contentW)
-    drawCompatibilityPanel(margin, compatY + 13, contentW, 49)
+    drawCompatibilityPanel(margin, compatY + 13, contentW, 42)
 
-    const bottomY = compatY + 76
+    const bottomY = compatY + 62
     const colGap = 7
     const colW = (contentW - colGap) / 2
     sectionTitle("Materials", margin, bottomY, colW)
@@ -1056,7 +1078,7 @@ export default function PrismPage() {
     y = drawCapacityCards(margin, y + 13, contentW) + 13
 
     sectionTitle("Sizing validation", margin, y, contentW)
-    validationBanner(margin, y + 13, contentW, 29)
+    validationBanner(margin, y + 13, contentW, 44)
 
     const safeCode = String(product.newCode || "product")
       .replace(/[^a-z0-9-_]+/gi, "-")
