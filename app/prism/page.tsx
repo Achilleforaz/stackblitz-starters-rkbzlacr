@@ -770,7 +770,7 @@ export default function PrismPage() {
       if (tone === "success") return { text: success, bg: successSoft, border: [184, 224, 199] }
       if (tone === "warning") return { text: warning, bg: warningSoft, border: [252, 211, 77] }
       if (tone === "danger") return { text: danger, bg: dangerSoft, border: [248, 113, 113] }
-      if (tone === "accent") return { text: accentDark, bg: accentSoft, border: [202, 192, 255] }
+      if (tone === "accent") return { text: navy, bg: white, border: line }
       if (tone === "neutral") return { text: slate, bg: neutralSoft, border: line }
       return { text: navy, bg: white, border: line }
     }
@@ -996,26 +996,31 @@ export default function PrismPage() {
       const gap = 3
       const count = Math.max(tableConditions.length, 1)
       const cardW = (w - gap * (count - 1)) / count
-      const cardH = 35
+      const cardH = 42
       tableConditions.forEach((condition, index) => {
         const cx = x + index * (cardW + gap)
         const tone = statusTone(condition.capacityStatus)
         const colors = toneColors(tone)
         roundedPanel(cx, y, cardW, cardH, white, colors.border, 3)
-        write(`C${condition.id}`, cx + 3, y + 5.6, { size: 6.8, bold: true, color: accentDark })
+        write(`C${condition.id}`, cx + 3, y + 5.6, { size: 6.8, bold: true, color: navy })
         pill(statusLabel(condition.capacityStatus), cx + cardW - 21, y + 2.4, 18, tone)
-        write("Requested", cx + 3, y + 13, { size: 5, bold: true, color: muted })
-        write(`${displayValue(condition.flowNm3h)} Nm3/h`, cx + cardW - 3, y + 13, { size: 5.8, bold: true, color: navy, align: "right" })
-        write("Max admissible", cx + 3, y + 19, { size: 5, bold: true, color: muted })
-        write(`${displayValue(condition.maxAdmissibleFlow)} Nm3/h`, cx + cardW - 3, y + 19, { size: 5.8, bold: true, color: navy, align: "right" })
+
+        write("Requested flow", cx + 3, y + 13, { size: 4.9, bold: true, color: muted })
+        write(`${displayValue(condition.flowNm3h)} Nm3/h`, cx + cardW - 3, y + 13, { size: 5.6, bold: true, color: navy, align: "right" })
+        write("Max admissible flow", cx + 3, y + 19.2, { size: 4.9, bold: true, color: muted })
+        write(`${displayValue(condition.maxAdmissibleFlow)} Nm3/h`, cx + cardW - 3, y + 19.2, { size: 5.6, bold: true, color: navy, align: "right" })
+
         const utilization = Math.max(0, Math.min(Number(condition.utilizationPercent) || 0, 100))
         setFill(neutralSoft)
         setStroke(line)
-        pdf.roundedRect(cx + 3, y + 23, cardW - 6, 4, 1.8, 1.8, "FD")
+        pdf.roundedRect(cx + 3, y + 24, cardW - 6, 4, 1.8, 1.8, "FD")
         setFill(colors.text)
-        pdf.roundedRect(cx + 3, y + 23, ((cardW - 6) * utilization) / 100, 4, 1.8, 1.8, "F")
-        write(`Utilization ${displayValue(condition.utilizationPercent)}%`, cx + 3, y + 31.5, { size: 5, bold: true, color: colors.text })
-        write(`Margin ${displayValue(condition.capacityMarginPercent)}%`, cx + cardW - 3, y + 31.5, { size: 5, bold: true, color: slate, align: "right" })
+        pdf.roundedRect(cx + 3, y + 24, ((cardW - 6) * utilization) / 100, 4, 1.8, 1.8, "F")
+
+        write("Utilization", cx + 3, y + 33.2, { size: 5, bold: true, color: muted })
+        write(`${displayValue(condition.utilizationPercent)}%`, cx + cardW - 3, y + 33.2, { size: 5.7, bold: true, color: colors.text, align: "right" })
+        write("Capacity margin", cx + 3, y + 39.2, { size: 5, bold: true, color: muted })
+        write(`${displayValue(condition.capacityMarginPercent)}%`, cx + cardW - 3, y + 39.2, { size: 5.7, bold: true, color: slate, align: "right" })
       })
       return y + cardH
     }
@@ -1055,19 +1060,19 @@ export default function PrismPage() {
       { label: "Max inlet pressure", value: product.mwp },
       { label: "Temperature range", value: formatTemperatureRange(product.workingTemp, `${sizingSummary.minTemperature} to +${sizingSummary.maxTemperature}°C`) },
       { label: "Leakage rate", value: formatLeakageRate(product.leakageRate || product.leakageRateInternal || product.leakageRateExternal) },
-      { label: "In & outlet port", value: product.port, tone: "accent" },
+      { label: "In & outlet port", value: product.port },
     ]
     metricGrid(techItems, margin, startY + 12, leftW, 2, 16, 3)
-    drawCompatibilityPanel(margin, startY + 66, leftW, 54)
-    drawProductSketch(sketchAsset, margin + leftW + 6, startY + 12, rightW, 108)
+    drawCompatibilityPanel(margin, startY + 66, leftW, 58)
+    drawProductSketch(sketchAsset, margin + leftW + 6, startY + 12, rightW, 112)
 
-    const lowerY = 178
+    const lowerY = 184
     const colGap = 6
     const colW = (contentW - colGap) / 2
     sectionTitle("Materials", "Wetted construction", margin, lowerY, colW)
     sectionTitle("Product features", "Operating options", margin + colW + colGap, lowerY, colW)
-    roundedPanel(margin, lowerY + 12, colW, 45, white, line, 3)
-    roundedPanel(margin + colW + colGap, lowerY + 12, colW, 45, white, line, 3)
+    roundedPanel(margin, lowerY + 12, colW, 48, white, line, 3)
+    roundedPanel(margin + colW + colGap, lowerY + 12, colW, 48, white, line, 3)
     infoRows([
       { label: "Body", value: product.bodyMaterial },
       { label: "Sealing", value: product.sealing },
@@ -1081,10 +1086,6 @@ export default function PrismPage() {
       { label: "Options", value: displayValue(product.option) },
     ], margin + colW + colGap + 4, lowerY + 18, colW - 8, 9)
 
-    roundedPanel(margin, 241, contentW, 23, accentSoft, [202, 192, 255], 3)
-    write("CUSTOMER READABILITY NOTE", margin + 5, 247, { size: 5.6, bold: true, color: accentDark })
-    write("Fluid compatibility is separated from selected fluid. Compatibility is derived from wetted materials; PRISM sizing calculations are unchanged.", margin + 5, 253.5, { size: 6, color: slate, maxWidth: contentW - 10 })
-
     pdf.addPage()
     pageBackground()
     header("SIZING REPORT", "PRISM calculation engine - pressure regulator capacity validation", 2)
@@ -1095,10 +1096,10 @@ export default function PrismPage() {
     write("A. Summary", margin, y + 4, { size: 7.4, bold: true, color: navy })
     y += 8
     y = metricGrid([
-      { label: "Fluid", value: selectedFluid?.name, tone: "accent" },
+      { label: "Fluid", value: selectedFluid?.name },
       { label: "Density", value: computedFluid ? `${computedFluid.density} kg/Nm3` : "-" },
-      { label: "Required seat", value: displayNumber(sizingSummary.minRequiredSeatSize, " mm"), tone: "accent" },
-      { label: "Required port", value: sizingSummary.requiredConnector.label, tone: "accent" },
+      { label: "Required seat", value: displayNumber(sizingSummary.minRequiredSeatSize, " mm") },
+      { label: "Required port", value: sizingSummary.requiredConnector.label },
       { label: "Setting / regulation", value: `${displayValue(product.setting)} / ${displayValue(product.regulation)}` },
     ], margin, y, contentW, 5, 15.5, 3)
 
@@ -1106,7 +1107,7 @@ export default function PrismPage() {
       ["Inlet pressure (bar g)", tableConditions.map((item) => item.inletPressure)],
       ["Outlet pressure (bar g)", tableConditions.map((item) => item.outletPressure)],
       ["Flow rate (Nm3/h)", tableConditions.map((item) => item.flowNm3h)],
-      ["Fluid temperature (deg C)", tableConditions.map((item) => item.temperature)],
+      ["Fluid temperature (°C)", tableConditions.map((item) => item.temperature)],
       ["Seat required (mm)", tableConditions.map((item) => item.seatSize)],
       ["Outlet bore required (mm)", tableConditions.map((item) => item.outletBore)],
     ]
@@ -1123,8 +1124,7 @@ export default function PrismPage() {
     y = drawMatrixTable("Working conditions", margin, y + 8, contentW, 56, workingRows, { rowH: 6.8, headerH: 7.4 }) + 8
 
     write("C. Pressure Regulator Capacity", margin, y + 4, { size: 7.4, bold: true, color: navy })
-    y = drawCapacityCards(margin, y + 8, contentW) + 6
-    y = drawMatrixTable("Capacity check - detailed values", margin, y, contentW, 56, capacityRows, { rowH: 6.4, headerH: 7.2 }) + 8
+    y = drawCapacityCards(margin, y + 8, contentW) + 10
 
     write("D. Sizing validation", margin, y + 4, { size: 7.4, bold: true, color: navy })
     validationBanner(margin, y + 8, contentW, 21)
@@ -1848,10 +1848,10 @@ function displayNumber(value: unknown, suffix = "") {
 function formatTemperatureRange(value: unknown, fallback: string) {
   const raw = displayValue(value, fallback)
   return raw
-    .replace(/°\s*°\s*C/gi, "°C")
     .replace(/deg\s*C/gi, "°C")
-    .replace(/\s*C$/i, "°C")
-    .replace(/\s*°C/gi, "°C")
+    .replace(/°+/g, "°")
+    .replace(/\s*°\s*C/gi, "°C")
+    .replace(/\s+C\b/g, "°C")
 }
 
 function formatLeakageRate(value: unknown) {
