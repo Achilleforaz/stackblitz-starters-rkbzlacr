@@ -776,13 +776,17 @@ export default function PrismPage() {
     }
 
     function itemBox(item: DetailItem, x: number, y: number, w: number, h: number) {
-      roundedPanel(x, y, w, h, white, item.emphasis ? [186, 173, 255] : line, 2.7)
-      write(item.label, x + 3, y + 4.8, { size: 5.6, bold: true, color: muted, maxWidth: w - 6 })
-      write(item.value, x + 3, y + 11.2, {
-        size: 7.2,
+      roundedPanel(x, y, w, h, white, line, 2.7)
+      if (item.emphasis) {
+        setFill(purple)
+        pdf.roundedRect(x + 2.2, y + 2.2, 1.4, h - 4.4, 0.7, 0.7, "F")
+      }
+      write(item.label, x + 4.5, y + 4.8, { size: 5.5, bold: true, color: muted, maxWidth: w - 8 })
+      write(item.value, x + 4.5, y + 11.2, {
+        size: 7,
         bold: true,
         color: item.emphasis ? purple : navy,
-        maxWidth: w - 6,
+        maxWidth: w - 8,
         lineHeightFactor: 1.12,
       })
     }
@@ -811,6 +815,65 @@ export default function PrismPage() {
         write(item.value, x + 37, ry + 3, { size: 6.4, bold: true, color: item.emphasis ? purple : navy, maxWidth: w - 42 })
       })
       return y + h
+    }
+
+    function formatTemperatureRange(value: unknown) {
+      const text = displayValue(value)
+      return text.replace(/\bdeg\s*C\b/gi, "°C").replace(/\s*C$/i, "°C")
+    }
+
+    function formatLeakageRate(value: unknown) {
+      const text = displayValue(value)
+      if (!text || text === "-") return "According to sealing"
+      return text
+        .replace(/10-3/g, "1 x 10^-3")
+        .replace(/mbar\.l\/s/g, "mbar·l/s")
+    }
+
+    function productOverviewLine() {
+      return [
+        `Model ${displayValue(product.model)}`,
+        displayValue(product.dn),
+        displayValue(product.mwp),
+        `${displayValue(product.regulation)} regulation`,
+        `${displayValue(product.port)} ports`,
+      ].filter((item) => item && item !== "-").join(" · ")
+    }
+
+    function sizingExtremeValues() {
+      const utilizations = tableConditions
+        .map((item) => Number(item.utilizationPercent))
+        .filter((value) => Number.isFinite(value))
+      const margins = tableConditions
+        .map((item) => Number(item.capacityMarginPercent))
+        .filter((value) => Number.isFinite(value))
+      return {
+        highestUtilization: utilizations.length ? Math.max(...utilizations) : 0,
+        minimumMargin: margins.length ? Math.min(...margins) : 0,
+      }
+    }
+
+    function overviewBand(x: number, y: number, w: number) {
+      roundedPanel(x, y, w, 13, panel, line, 3)
+      write("CONFIGURED PRESSURE REGULATOR", x + 4, y + 4.8, { size: 5.5, bold: true, color: muted })
+      write(productOverviewLine(), x + 4, y + 9.5, { size: 7.2, bold: true, color: navy, maxWidth: w - 8 })
+      return y + 13
+    }
+
+    function operatingEnvelope(x: number, y: number, w: number) {
+      const { highestUtilization, minimumMargin } = sizingExtremeValues()
+      const tones = tableConditions.map((item) => statusTone(item.capacityStatus))
+      const hasExceed = tones.includes("danger")
+      const hasWarning = tones.includes("warning")
+      const tone: StatusTone = hasExceed ? "danger" : hasWarning ? "warning" : "ok"
+      const colors = statusColors(tone)
+      roundedPanel(x, y, w, 18, white, line, 3)
+      write("OPERATING ENVELOPE", x + 4, y + 5.5, { size: 5.7, bold: true, color: muted })
+      write(`Highest utilization: ${displayValue(highestUtilization)}%`, x + 4, y + 12.2, { size: 7, bold: true, color: colors.text })
+      write(`Minimum capacity margin: ${displayValue(minimumMargin)}%`, x + 68, y + 12.2, { size: 7, bold: true, color: navy })
+      roundedPanel(x + w - 32, y + 5.2, 25, 7.5, colors.bg, colors.border, 2)
+      write(hasExceed ? "TO REVIEW" : hasWarning ? "WARNING" : "VALIDATED", x + w - 19.5, y + 10.2, { size: 5.7, bold: true, color: colors.text, align: "center" })
+      return y + 18
     }
 
     function statusTone(status: unknown): StatusTone {
@@ -871,23 +934,37 @@ export default function PrismPage() {
 
     function drawCapacityCards(x: number, y: number, w: number) {
       const gap = 3
-      const cardW = (w - gap * (tableConditions.length - 1)) / tableConditions.length
-      const cardH = 29
+      const conditionCount = Math.max(tableConditions.length, 1)
+      const cardW = (w - gap * (conditionCount - 1)) / conditionCount
+      const cardH = 43
       tableConditions.forEach((condition, index) => {
         const cx = x + index * (cardW + gap)
-        const colors = statusColors(statusTone(condition.capacityStatus))
-        roundedPanel(cx, y, cardW, cardH, white, colors.border, 3)
-        roundedPanel(cx + cardW - 18, y + 3, 13.5, 5.8, colors.bg, colors.border, 1.8)
-        write(`C${condition.id}`, cx + 4, y + 6.9, { size: 8, bold: true, color: purple })
-        write(statusLabel(condition.capacityStatus), cx + cardW - 11.2, y + 7.1, { size: 5.2, bold: true, color: colors.text, align: "center" })
-        write("Requested", cx + 4, y + 13, { size: 5.1, color: muted })
-        write(`${displayValue(condition.flowNm3h)} Nm3/h`, cx + 25, y + 13, { size: 6.1, bold: true, color: navy, align: "right" })
-        write("Max admissible", cx + 4, y + 19, { size: 5.1, color: muted })
-        write(`${displayValue(condition.maxAdmissibleFlow)} Nm3/h`, cx + cardW - 4, y + 19, { size: 6.1, bold: true, color: navy, align: "right" })
-        write("Utilization", cx + 4, y + 25, { size: 5.1, color: muted })
-        write(`${displayValue(condition.utilizationPercent)}%`, cx + 27, y + 25, { size: 6.1, bold: true, color: colors.text, align: "right" })
-        write("Margin", cx + cardW - 28, y + 25, { size: 5.1, color: muted })
-        write(`${displayValue(condition.capacityMarginPercent)}%`, cx + cardW - 4, y + 25, { size: 6.1, bold: true, color: colors.text, align: "right" })
+        const tone = statusTone(condition.capacityStatus)
+        const colors = statusColors(tone)
+        const utilization = Math.max(0, Math.min(100, Number(condition.utilizationPercent) || 0))
+        const barW = cardW - 8
+        const barFillW = Math.max(1, (barW * utilization) / 100)
+
+        roundedPanel(cx, y, cardW, cardH, white, line, 3)
+        setFill(colors.bg)
+        pdf.roundedRect(cx, y, cardW, 9.2, 3, 3, "F")
+        write(`C${condition.id}`, cx + 4, y + 6.2, { size: 8.2, bold: true, color: navy })
+        roundedPanel(cx + cardW - 20, y + 2.2, 15.5, 5.2, colors.bg, colors.border, 1.8)
+        write(statusLabel(condition.capacityStatus), cx + cardW - 12.2, y + 5.9, { size: 5, bold: true, color: colors.text, align: "center" })
+
+        write("Requested flow", cx + 4, y + 15, { size: 5.1, color: muted })
+        write(`${displayValue(condition.flowNm3h)} Nm3/h`, cx + cardW - 4, y + 15, { size: 6.2, bold: true, color: navy, align: "right" })
+        write("Max admissible flow", cx + 4, y + 21.2, { size: 5.1, color: muted })
+        write(`${displayValue(condition.maxAdmissibleFlow)} Nm3/h`, cx + cardW - 4, y + 21.2, { size: 6.2, bold: true, color: navy, align: "right" })
+
+        write("Utilization", cx + 4, y + 28.1, { size: 5.1, color: muted })
+        write(`${displayValue(condition.utilizationPercent)}%`, cx + cardW - 4, y + 28.1, { size: 6.5, bold: true, color: colors.text, align: "right" })
+        roundedPanel(cx + 4, y + 31.2, barW, 3.2, [241, 245, 249], line, 1.6)
+        setFill(colors.text)
+        pdf.roundedRect(cx + 4, y + 31.2, barFillW, 3.2, 1.6, 1.6, "F")
+
+        write("Capacity margin", cx + 4, y + 39, { size: 5.1, color: muted })
+        write(`${displayValue(condition.capacityMarginPercent)}%`, cx + cardW - 4, y + 39, { size: 6.2, bold: true, color: colors.text, align: "right" })
       })
       return y + cardH
     }
@@ -897,6 +974,8 @@ export default function PrismPage() {
       const hasExceed = tones.includes("danger")
       const hasWarning = tones.includes("warning")
       const colors = statusColors(hasExceed ? "danger" : hasWarning ? "warning" : "ok")
+      const { highestUtilization, minimumMargin } = sizingExtremeValues()
+      const resultLabel = hasExceed ? "TO REVIEW" : hasWarning ? "WARNING" : "VALIDATED"
       const title = hasExceed
         ? "Configuration exceeds at least one operating limit"
         : hasWarning
@@ -906,30 +985,35 @@ export default function PrismPage() {
         ? "Review requested flow, pressure drop, seat size or outlet port before customer release."
         : hasWarning
           ? "Sizing is usable with reduced margin. Check the highlighted working condition before release."
-          : "The selected pressure regulator capacity covers the requested application conditions."
-      roundedPanel(x, y, w, 18, colors.bg, colors.border, 3)
-      setFill(colors.text)
-      pdf.circle(x + 6, y + 7.2, 2, "F")
-      write(title, x + 12, y + 6.3, { size: 7.2, bold: true, color: colors.text, maxWidth: w - 17 })
-      write(body, x + 12, y + 11.7, { size: 5.8, color: slate, maxWidth: w - 17 })
-      return y + 18
+          : "The selected pressure regulator is suitable for the requested operating conditions."
+      roundedPanel(x, y, w, 23, colors.bg, colors.border, 3)
+      write("SIZING RESULT", x + 5, y + 6.2, { size: 5.8, bold: true, color: muted })
+      write(resultLabel, x + 5, y + 14.5, { size: 13, bold: true, color: colors.text })
+      write(title, x + 47, y + 7.5, { size: 7.2, bold: true, color: colors.text, maxWidth: w - 53 })
+      write(body, x + 47, y + 13, { size: 5.8, color: slate, maxWidth: w - 53 })
+      write(`Highest utilization: ${displayValue(highestUtilization)}% · Minimum margin: ${displayValue(minimumMargin)}%`, x + 47, y + 18.5, { size: 5.8, bold: true, color: navy, maxWidth: w - 53 })
+      return y + 23
     }
 
     function drawProductSketch(x: number, y: number, w: number, h: number) {
       roundedPanel(x, y, w, h, white, line, 3)
       write("PRODUCT VIEW", x + 4, y + 6, { size: 6.3, bold: true, color: navy })
-      write(`Model ${displayValue(product.model)}`, x + w - 4, y + 6, { size: 5.8, bold: true, color: purple, align: "right" })
+      write(`Model ${displayValue(product.model)}`, x + w - 4, y + 6, { size: 5.8, bold: true, color: muted, align: "right" })
       if (productSketchDataUrl) {
         const format = productSketchDataUrl.startsWith("data:image/jpeg") || productSketchDataUrl.startsWith("data:image/jpg") ? "JPEG" : "PNG"
         pdf.addImage(productSketchDataUrl, format, x + 6, y + 11, w - 12, h - 17, undefined, "FAST")
       } else {
+        const centerY = y + h / 2 + 1
         setStroke([193, 204, 221], 0.25)
-        pdf.line(x + 13, y + h / 2, x + w - 13, y + h / 2)
-        pdf.roundedRect(x + 24, y + h / 2 - 10, w - 48, 20, 8, 8)
-        pdf.circle(x + 39, y + h / 2, 7)
-        pdf.circle(x + w - 39, y + h / 2, 7)
-        write("Add product sketch", x + w / 2, y + h - 13, { size: 6.2, bold: true, color: muted, align: "center" })
-        write("/public/prism-sketches/model-279.png", x + w / 2, y + h - 8, { size: 5.3, color: muted, align: "center" })
+        pdf.line(x + 15, centerY, x + w - 15, centerY)
+        pdf.roundedRect(x + 26, centerY - 10, w - 52, 20, 8, 8)
+        pdf.circle(x + 40, centerY, 7)
+        pdf.circle(x + w - 40, centerY, 7)
+        setFill([241, 245, 249])
+        pdf.circle(x + 40, centerY, 2.2, "F")
+        pdf.circle(x + w - 40, centerY, 2.2, "F")
+        write("Product drawing pending", x + w / 2, y + h - 12.5, { size: 6.1, bold: true, color: muted, align: "center" })
+        write("Reserved area for model sketch", x + w / 2, y + h - 7.6, { size: 5.2, color: muted, align: "center" })
       }
     }
 
@@ -943,8 +1027,10 @@ export default function PrismPage() {
       const candidates = [
         `/prism-sketches/${clean(config.newCode)}.png`,
         `/prism-sketches/${clean(config.newCode)}.jpg`,
+        `/prism-sketches/${clean(config.newCode)}.jpeg`,
         `/prism-sketches/model-${clean(config.model)}.png`,
         `/prism-sketches/model-${clean(config.model)}.jpg`,
+        `/prism-sketches/model-${clean(config.model)}.jpeg`,
       ].filter(Boolean)
 
       for (const path of candidates) {
@@ -967,26 +1053,27 @@ export default function PrismPage() {
 
     pageBackground()
     header("PRODUCT DATA SHEET", "Industrial pressure regulator configuration report", 1)
+    overviewBand(margin, 41, contentW)
 
-    sectionTitle("Technical specification", "Core application and mechanical data", margin, 47, contentW)
+    sectionTitle("Technical specification", "Core application and mechanical data", margin, 61, contentW)
     const technicalLeftW = 93
     const sketchW = contentW - technicalLeftW - 7
     grid([
       { label: "DN", value: product.dn },
       { label: "Recommended DN", value: dnSizingProfile.recommendedDnLabel, emphasis: true },
       { label: "Max inlet pressure", value: product.mwp },
-      { label: "Temperature range", value: displayValue(product.workingTemp, `${sizingSummary.minTemperature} / ${sizingSummary.maxTemperature} C`) },
-      { label: "Leakage rate", value: displayValue(product.leakageRate || product.leakageRateInternal || product.leakageRateExternal, "According to sealing") },
+      { label: "Temperature range", value: formatTemperatureRange(displayValue(product.workingTemp, `${sizingSummary.minTemperature} / ${sizingSummary.maxTemperature} °C`)) },
+      { label: "Leakage rate", value: formatLeakageRate(product.leakageRate || product.leakageRateInternal || product.leakageRateExternal) },
       { label: "In & outlet port", value: product.port },
-    ], margin, 59, technicalLeftW, 2, 15.2, 3)
-    drawProductSketch(margin + technicalLeftW + 7, 59, sketchW, 51.6)
+    ], margin, 73, technicalLeftW, 2, 15.2, 3)
+    drawProductSketch(margin + technicalLeftW + 7, 73, sketchW, 51.6)
 
-    sectionTitle("Fluid compatibility", "Selection and material compatibility", margin, 118, contentW)
+    sectionTitle("Fluid compatibility", "Selection and material compatibility", margin, 132, contentW)
     const fluidEndY = grid([
       { label: "Selected fluid", value: selectedFluid?.name, emphasis: true },
       { label: "Compatible fluids", value: fluidCompatibilitySummary.compatibleLabel.replace(/^Compatible:\s*/i, "") },
       { label: "Acceptable fluids", value: fluidCompatibilitySummary.acceptableLabel.replace(/^Acceptable:\s*/i, "") },
-    ], margin, 130, contentW, 3, 22, 3)
+    ], margin, 144, contentW, 3, 22, 3)
 
     const twoColGap = 6
     const twoColW = (contentW - twoColGap) / 2
@@ -1018,33 +1105,25 @@ export default function PrismPage() {
       { label: "Setting / regulation", value: `${displayValue(product.setting)} / ${displayValue(product.regulation)}` },
     ], margin, 70, contentW, 5, 16, 3)
 
+    let y = operatingEnvelope(margin, summaryEndY + 6, contentW) + 9
+
     const workingRows: [string, unknown[]][] = [
       ["Inlet pressure (bar g)", tableConditions.map((item) => item.inletPressure)],
       ["Outlet pressure (bar g)", tableConditions.map((item) => item.outletPressure)],
       ["Flow rate (Nm3/h)", tableConditions.map((item) => item.flowNm3h)],
-      ["Fluid temperature (deg C)", tableConditions.map((item) => item.temperature)],
+      ["Fluid temperature (°C)", tableConditions.map((item) => item.temperature)],
       ["Seat required (mm)", tableConditions.map((item) => item.seatSize)],
       ["Outlet bore required (mm)", tableConditions.map((item) => item.outletBore)],
     ]
-    const capacityRows: [string, unknown[]][] = [
-      ["Requested flow (Nm3/h)", tableConditions.map((item) => item.flowNm3h)],
-      ["Max admissible flow (Nm3/h)", tableConditions.map((item) => item.maxAdmissibleFlow)],
-      ["Utilization (%)", tableConditions.map((item) => item.utilizationPercent)],
-      ["Capacity margin (%)", tableConditions.map((item) => item.capacityMarginPercent)],
-      ["Status", tableConditions.map((item) => item.capacityStatus)],
-    ]
 
-    let y = summaryEndY + 11
     write("B. Application working conditions", margin, y, { size: 7.4, bold: true, color: navy })
     y = drawTable("Working conditions", margin, y + 5, contentW, 56, workingRows) + 9
 
-    write("C. Pressure Regulator Capacity", margin, y, { size: 7.4, bold: true, color: navy })
-    y = drawCapacityCards(margin, y + 5, contentW) + 6
-    y = drawTable("Capacity check - detailed values", margin, y, contentW, 56, capacityRows) + 10
+    write("C. Pressure regulator capacity", margin, y, { size: 7.4, bold: true, color: navy })
+    y = drawCapacityCards(margin, y + 5, contentW) + 10
 
     write("D. Sizing validation", margin, y, { size: 7.4, bold: true, color: navy })
     validationBanner(margin, y + 5, contentW)
-    pageFooter(2)
 
     const safeCode = String(product.newCode || "product")
       .replace(/[^a-z0-9-_]+/gi, "-")
