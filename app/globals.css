@@ -1017,3 +1017,5 @@ table td {
     flex-basis: 152px !important;
   }
 }
+
+.mwp-line { position:absolute;height:2px;background:rgba(200,200,210,0.35);top:50%;transform:translateY(-50%);border-radius:2px;z-index:1;}
