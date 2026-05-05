@@ -1451,9 +1451,9 @@ export default function PrismPage() {
           )}
 
           <RangeMap
-            products={filteredConfigurations}
+            products={technicallyCompatible}
+            activeProducts={filteredConfigurations}
             recommendedDn={sizingApplied ? dnSizingProfile.recommendedDnLabel : "Apply sizing"}
-            selectedDn={displayedFilters.dn}
           />
 
           {selectedConfiguration && (
@@ -1672,7 +1672,7 @@ function buildFluidCompatibilitySummary(
 
   return {
     compatibleLabel:
-      "Compatible: Air, Air respirable, Argon, Azote, Butane, Dioxyde de carbone, Gaz naturel, Hélium, Hydrogène",
+      "Compatible: Air, Argon, Azote, Butane, Dioxyde de carbone, Gaz naturel, Hélium, Hydrogène",
     acceptableLabel: "Acceptable: Oxygène",
   }
 }
@@ -1781,7 +1781,6 @@ function ProductDatasheet({
     conditions,
     sizingSummary
   )
-  const fluidCompatibilitySummary = buildFluidCompatibilitySummary(product, selectedFluid)
 
   return (
     <div className="mt-8 rounded-2xl border border-white/10 bg-[#10112b] p-5">
@@ -1842,14 +1841,10 @@ function ProductDatasheet({
               <DatasheetLine label="Outlet pressure range" value={`${Math.min(...reportConditions.map((item) => item.outletPressure || 0))} / ${Math.max(...reportConditions.map((item) => item.outletPressure || 0))} bar g`} />
               <DatasheetLine label="In & outlet port" value={displayValue(product.port)} />
             </div>
-            <div className="mt-4 rounded-xl border border-slate-300 bg-slate-50 p-3 text-[11px]">
-              <div className="grid grid-cols-[140px_1fr] gap-3">
-                <p className="font-black text-slate-500">Fluid compatibility</p>
-                <div className="space-y-1">
-                  <p className="font-black text-slate-950">{fluidCompatibilitySummary.compatibleLabel}</p>
-                  <p className="font-black text-amber-700">{fluidCompatibilitySummary.acceptableLabel}</p>
-                </div>
-              </div>
+            <div className="mt-3 rounded-lg border border-slate-300 bg-slate-50 p-3">
+              <p className="text-[11px] font-black text-slate-500">Fluid compatibility</p>
+              <p className="mt-1 text-xs font-black text-slate-800">{fluidCompatibilitySummary.compatibleLabel}</p>
+              <p className="mt-1 text-xs font-black text-amber-700">{fluidCompatibilitySummary.acceptableLabel}</p>
             </div>
           </DatasheetSection>
 
@@ -2009,15 +2004,18 @@ function getPortDisplayLabel(port: string) {
 
 function RangeMap({
   products,
+  activeProducts,
   recommendedDn,
-  selectedDn,
 }: {
   products: PrismConfiguration[]
+  activeProducts?: PrismConfiguration[]
   recommendedDn: string
-  selectedDn?: string
 }) {
-  const [hoveredRowKey, setHoveredRowKey] = useState<string | null>(null)
   const maxMwp = 1000
+  const [hoveredModel, setHoveredModel] = useState<string | null>(null)
+
+  const activeSource = activeProducts && activeProducts.length > 0 ? activeProducts : products
+  const activeIds = new Set(activeSource.map((product) => product.id))
 
   const rows = Array.from(
     products.reduce((dnMap, product) => {
@@ -2052,11 +2050,13 @@ function RangeMap({
             settingMax: settingRange.max,
             settingLabel: settingRange.label,
             count: 0,
+            productIds: [] as Array<string | number>,
           }
           current.count += 1
+          current.productIds.push(product.id)
           rangeMap.set(key, current)
           return rangeMap
-        }, new Map<string, { key: string; mwp: number; port: string; settingMin: number; settingMax: number; settingLabel: string; count: number }>()),
+        }, new Map<string, { key: string; mwp: number; port: string; settingMin: number; settingMax: number; settingLabel: string; count: number; productIds: Array<string | number> }>()),
       )
         .map(([, range]) => range)
         .filter((range) => range.mwp > 0)
@@ -2072,7 +2072,16 @@ function RangeMap({
         return numberFromText(a) - numberFromText(b) || a.localeCompare(b)
       })
 
-      return { ...row, ranges, ports }
+      const bodyMaterials = Array.from(
+        new Set(row.products.map((product) => displayValue(product.bodyMaterial)).filter((value) => value !== "-"))
+      ).sort()
+      const regulations = Array.from(
+        new Set(row.products.map((product) => displayValue(product.regulation)).filter((value) => value !== "-"))
+      ).sort()
+      const isActive = row.products.some((product) => activeIds.has(product.id))
+      const maxRowMwp = Math.max(...ranges.map((range) => range.mwp), 0)
+
+      return { ...row, ranges, ports, bodyMaterials, regulations, isActive, maxRowMwp }
     })
     .filter((row) => row.ranges.length > 0)
     .sort((a, b) => b.dnValue - a.dnValue || a.modelLabel.localeCompare(b.modelLabel))
@@ -2100,12 +2109,12 @@ function RangeMap({
         <div>
           <h3 className="text-lg font-black tracking-tight">Standard range map</h3>
           <p className="mt-1 max-w-3xl text-xs text-gray-300">
-            X axis = pressure in bar. Thin pale line = MWP limit. Colored blocks = available regulation / setting ranges.
+            X axis = pressure in bar. Grey line = MWP limit. Colored blocks = available regulation / setting ranges.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-[10px] font-bold text-white/60">
           <span className="inline-flex items-center gap-2">
-            <span className="h-[2px] w-10 rounded-full bg-white/25" />
+            <span className="h-[2px] w-10 rounded-full bg-white/45 shadow-[0_0_8px_rgba(255,255,255,0.25)]" />
             MWP
           </span>
           <span className="inline-flex items-center gap-2">
@@ -2120,7 +2129,7 @@ function RangeMap({
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#242643]">
-        <div className="grid grid-cols-[62px_76px_1fr_64px] border-b border-white/10 bg-[#171832] text-[9px] font-black uppercase tracking-[0.13em] text-white/55">
+        <div className="grid grid-cols-[62px_82px_1fr_64px] border-b border-white/10 bg-[#171832] text-[9px] font-black uppercase tracking-[0.13em] text-white/55">
           <div className="border-r border-white/10 px-2 py-2.5">DN</div>
           <div className="border-r border-white/10 px-2 py-2.5">Model</div>
           <div className="relative px-3 py-2.5">
@@ -2145,21 +2154,27 @@ function RangeMap({
                   const accentClass = rangeAccentClasses[colorIndex % rangeAccentClasses.length]
                   const laneCount = Math.max(1, row.ranges.length)
                   const rowHeight = Math.max(38, 24 + laneCount * 9)
-                  const rowMaxMwp = Math.max(...row.ranges.map((range) => range.mwp), 0)
-                  const rowMwpWidth = `${Math.max(3, Math.min(100, (rowMaxMwp / maxMwp) * 100))}%`
-                  const isFocusedDn = Boolean(selectedDn && row.dn !== selectedDn)
-                  const isHovered = hoveredRowKey === row.key
+                  const isHoveredModel = hoveredModel === row.modelLabel
+                  const isOtherHoveredModel = Boolean(hoveredModel && hoveredModel !== row.modelLabel)
+                  const shouldFade = isOtherHoveredModel || (!hoveredModel && !row.isActive)
+                  const rowDetails = [
+                    row.regulations.length ? row.regulations.join(" / ") : null,
+                    row.bodyMaterials.length ? row.bodyMaterials.join(" / ") : null,
+                  ].filter(Boolean).join(" · ")
 
                   return (
                     <div
                       key={row.key}
-                      onMouseEnter={() => setHoveredRowKey(row.key)}
-                      onMouseLeave={() => setHoveredRowKey(null)}
-                      className={`grid grid-cols-[76px_1fr_64px] transition-all duration-300 ${rowIndex > 0 ? "border-t border-white/10" : ""} ${isFocusedDn ? "opacity-25" : "opacity-100"} ${isHovered ? "bg-cyan-300/[0.06] shadow-[0_0_24px_rgba(103,232,249,0.16)]" : ""}`}
-                      style={{ minHeight: rowHeight }}
+                      onMouseEnter={() => setHoveredModel(row.modelLabel)}
+                      onMouseLeave={() => setHoveredModel(null)}
+                      className={`grid grid-cols-[82px_1fr_64px] transition-all duration-200 ease-out ${rowIndex > 0 ? "border-t border-white/10" : ""} ${shouldFade ? "opacity-25" : "opacity-100"} ${isHoveredModel ? "relative z-20 scale-[1.025] rounded-xl bg-white/[0.055] shadow-[0_0_24px_rgba(103,232,249,0.18)]" : ""}`}
+                      style={{ minHeight: isHoveredModel ? rowHeight + 12 : rowHeight, transformOrigin: "left center" }}
                     >
-                      <div className="flex items-center border-r border-white/10 px-2 py-1.5 text-xs font-black text-cyan-50">
-                        {row.modelLabel}
+                      <div className="flex flex-col justify-center border-r border-white/10 px-2 py-1.5 text-xs font-black text-cyan-50">
+                        <span>{row.modelLabel}</span>
+                        <span className={`mt-1 text-[8px] font-bold leading-tight text-white/55 transition-opacity duration-200 ${isHoveredModel ? "opacity-100" : "opacity-0"}`}>
+                          {rowDetails || "Standard configuration"}
+                        </span>
                       </div>
 
                       <div className="relative px-3 py-1.5">
@@ -2171,44 +2186,46 @@ function RangeMap({
                           />
                         ))}
 
-                        <div className="relative h-full min-h-[24px] transition-all duration-300">
+                        <div className="relative h-full min-h-[24px]">
                           <div
-                            className="pointer-events-none absolute left-0 top-1/2 h-[2px] -translate-y-1/2 rounded-full bg-slate-200/45 shadow-[0_0_8px_rgba(226,232,240,0.24)]"
-                            style={{ width: rowMwpWidth }}
-                            title={`${row.modelLabel} · DN ${row.dn} · MWP ${rowMaxMwp} bar`}
+                            className="absolute left-0 top-1/2 h-[2px] -translate-y-1/2 rounded-full bg-white/42 shadow-[0_0_8px_rgba(255,255,255,0.20)] transition-all duration-200"
+                            style={{ width: `${Math.max(3, Math.min(100, (row.maxRowMwp / maxMwp) * 100))}%` }}
+                            title={`${row.modelLabel} · DN ${row.dn} · max MWP ${row.maxRowMwp} bar`}
                           />
+
                           {row.ranges.map((range, index) => {
                             const mwpWidth = `${Math.max(3, Math.min(100, (range.mwp / maxMwp) * 100))}%`
                             const settingStart = Math.max(0, Math.min(100, (range.settingMin / maxMwp) * 100))
                             const settingEnd = Math.max(settingStart + 1, Math.min(100, (range.settingMax / maxMwp) * 100))
                             const settingWidth = `${Math.max(2.5, settingEnd - settingStart)}%`
                             const top = 3 + index * 9
+                            const rangeIsActive = range.productIds.some((id) => activeIds.has(id))
 
                             return (
                               <div
                                 key={range.key}
-                                className="absolute left-0 right-0"
+                                className={`absolute left-0 right-0 transition-all duration-200 ${!hoveredModel && !rangeIsActive ? "opacity-35" : "opacity-100"}`}
                                 style={{ top }}
                               >
                                 <div
-                                  className="absolute left-0 top-[5px] h-[2px] rounded-full bg-slate-200/35 transition-all duration-300"
+                                  className="absolute left-0 top-[5px] h-[2px] rounded-full bg-white/38 shadow-[0_0_6px_rgba(255,255,255,0.18)]"
                                   style={{ width: mwpWidth }}
                                   title={`${row.modelLabel} · DN ${row.dn} · MWP ${range.mwp} bar`}
                                 />
                                 <span
-                                  className="absolute top-[1px] -translate-y-full rounded bg-[#242643]/90 px-1 text-[8px] font-black leading-none text-white/45"
+                                  className={`absolute top-[1px] -translate-y-full rounded bg-[#242643]/90 px-1 text-[8px] font-black leading-none text-white/60 transition-opacity duration-200 ${isHoveredModel ? "opacity-100" : "opacity-65"}`}
                                   style={{ left: mwpWidth }}
                                   title={`MWP ${range.mwp} bar`}
                                 >
                                   {range.mwp}
                                 </span>
                                 <div
-                                  className={`absolute h-3 rounded-full border transition-all duration-300 ${accentClass} ${isHovered ? "shadow-[0_0_14px_rgba(255,255,255,0.28)] brightness-125" : ""}`}
+                                  className={`absolute h-3 rounded-full border transition-all duration-200 ${accentClass} ${isHoveredModel ? "scale-y-125 shadow-[0_0_14px_rgba(255,255,255,0.26)]" : ""}`}
                                   style={{ left: `${settingStart}%`, width: settingWidth }}
-                                  title={`${row.modelLabel} · DN ${row.dn} · Setting ${range.settingLabel} · MWP ${range.mwp} bar · Port ${range.port}`}
+                                  title={`${row.modelLabel} · DN ${row.dn} · Setting ${range.settingLabel} · MWP ${range.mwp} bar · Port ${range.port} · ${rowDetails}`}
                                 />
                                 <span
-                                  className="pointer-events-none absolute top-[1px] -translate-y-full whitespace-nowrap rounded bg-[#242643]/90 px-1 text-[8px] font-black leading-none text-white/70"
+                                  className={`pointer-events-none absolute top-[1px] -translate-y-full whitespace-nowrap rounded bg-[#242643]/90 px-1 text-[8px] font-black leading-none text-white/75 transition-opacity duration-200 ${isHoveredModel ? "opacity-100" : "opacity-65"}`}
                                   style={{ left: `${settingStart}%` }}
                                 >
                                   {range.settingLabel}
@@ -2243,7 +2260,7 @@ function RangeMap({
       </div>
 
       <div className="mt-2 text-[11px] text-gray-400">
-Hover a segment to see the exact setting range, MWP and port. Article reference, material and options stay hidden until final selection.
+Hover a model row to zoom it and reveal regulation/body material. Grey bars remain visible as the MWP reference; colored bars show setting ranges.
       </div>
     </div>
   )
