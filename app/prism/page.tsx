@@ -2049,51 +2049,48 @@ function RangeMap({
   })
 
   return (
-    <div className="mb-8 rounded-[1.75rem] border border-white/10 bg-[#10112b]/88 p-5 shadow-2xl shadow-black/10">
-      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+    <div className="mb-7 rounded-[1.5rem] border border-white/10 bg-[#10112b]/88 p-4 shadow-2xl shadow-black/10">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-xl font-black tracking-tight">Standard range map</h3>
-          <p className="mt-1 max-w-3xl text-sm text-gray-300">
-            Standard PR coverage after sizing and filters. X axis = pressure in bar. Pale track = inlet MWP capability, colored segment = regulation / setting pressure range.
+          <h3 className="text-lg font-black tracking-tight">Standard range map</h3>
+          <p className="mt-1 max-w-3xl text-xs text-gray-300">
+            X axis = pressure in bar. Thin pale line = MWP limit. Colored blocks = available regulation / setting ranges.
           </p>
-          <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px] font-bold text-white/55">
-            <span className="inline-flex items-center gap-2">
-              <span className="h-px w-10 rounded-full bg-white/25" />
-              MWP limit
-            </span>
-            <span className="inline-flex items-center gap-2">
-              <span className="h-2 w-10 rounded-full border border-cyan-300/40 bg-cyan-400/25" />
-              Setting pressure range
-            </span>
-          </div>
         </div>
-        <button
-          type="button"
-          className="rounded-2xl border border-cyan-300/25 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-50"
-        >
-          <span className="text-cyan-100/70">Recommended DN</span>
-          <span className="ml-2 font-black">{recommendedDn}</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-3 text-[10px] font-bold text-white/60">
+          <span className="inline-flex items-center gap-2">
+            <span className="h-[2px] w-10 rounded-full bg-white/25" />
+            MWP
+          </span>
+          <span className="inline-flex items-center gap-2">
+            <span className="h-3 w-10 rounded-full border border-cyan-300/40 bg-cyan-400/25" />
+            Setting range
+          </span>
+          <span className="rounded-xl border border-cyan-300/25 bg-cyan-400/10 px-3 py-2 text-cyan-50">
+            <span className="text-cyan-100/70">Recommended DN</span>
+            <span className="ml-2 font-black">{recommendedDn}</span>
+          </span>
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#242643]">
-        <div className="grid grid-cols-[76px_92px_1fr_88px] border-b border-white/10 bg-[#171832] text-[10px] font-black uppercase tracking-[0.14em] text-white/60">
-          <div className="border-r border-white/10 px-3 py-3">DN</div>
-          <div className="border-r border-white/10 px-3 py-3">Model</div>
-          <div className="relative px-4 py-3">
+        <div className="grid grid-cols-[62px_76px_1fr_64px] border-b border-white/10 bg-[#171832] text-[9px] font-black uppercase tracking-[0.13em] text-white/55">
+          <div className="border-r border-white/10 px-2 py-2.5">DN</div>
+          <div className="border-r border-white/10 px-2 py-2.5">Model</div>
+          <div className="relative px-3 py-2.5">
             <div className="flex justify-between">
               {ticks.map((tick) => (
                 <span key={tick}>{tick}</span>
               ))}
             </div>
           </div>
-          <div className="border-l border-white/10 px-3 py-3">Port</div>
+          <div className="border-l border-white/10 px-2 py-2.5">Port</div>
         </div>
 
         <div>
           {Array.from(rowsByDn.entries()).map(([dn, dnRows]) => (
-            <div key={dn} className="grid grid-cols-[76px_1fr] border-b border-white/10 last:border-b-0">
-              <div className="flex items-center justify-center border-r border-white/10 bg-white/[0.035] px-2 text-center text-sm font-black text-white">
+            <div key={dn} className="grid grid-cols-[62px_1fr] border-b border-white/10 last:border-b-0">
+              <div className="flex items-center justify-center border-r border-white/10 bg-white/[0.035] px-1.5 text-center text-xs font-black text-white">
                 {dn}
               </div>
               <div>
@@ -2101,34 +2098,34 @@ function RangeMap({
                   const colorIndex = modelColorIndex.get(row.modelLabel) || 0
                   const accentClass = rangeAccentClasses[colorIndex % rangeAccentClasses.length]
                   const laneCount = Math.max(1, row.ranges.length)
-                  const rowHeight = Math.max(46, 28 + laneCount * 10)
+                  const rowHeight = Math.max(38, 24 + laneCount * 9)
 
                   return (
                     <div
                       key={row.key}
-                      className={`grid grid-cols-[92px_1fr_88px] ${rowIndex > 0 ? "border-t border-white/10" : ""}`}
+                      className={`grid grid-cols-[76px_1fr_64px] ${rowIndex > 0 ? "border-t border-white/10" : ""}`}
                       style={{ minHeight: rowHeight }}
                     >
-                      <div className="flex items-center border-r border-white/10 px-3 py-2 text-sm font-black text-cyan-50">
+                      <div className="flex items-center border-r border-white/10 px-2 py-1.5 text-xs font-black text-cyan-50">
                         {row.modelLabel}
                       </div>
 
-                      <div className="relative px-4 py-2">
+                      <div className="relative px-3 py-1.5">
                         {ticks.slice(1, -1).map((tick) => (
                           <div
                             key={tick}
-                            className="pointer-events-none absolute inset-y-2 w-px bg-white/10"
+                            className="pointer-events-none absolute inset-y-1.5 w-px bg-white/10"
                             style={{ left: `${(tick / maxMwp) * 100}%` }}
                           />
                         ))}
 
-                        <div className="relative h-full min-h-[28px]">
+                        <div className="relative h-full min-h-[24px]">
                           {row.ranges.map((range, index) => {
                             const mwpWidth = `${Math.max(3, Math.min(100, (range.mwp / maxMwp) * 100))}%`
                             const settingStart = Math.max(0, Math.min(100, (range.settingMin / maxMwp) * 100))
                             const settingEnd = Math.max(settingStart + 1, Math.min(100, (range.settingMax / maxMwp) * 100))
                             const settingWidth = `${Math.max(2.5, settingEnd - settingStart)}%`
-                            const top = 4 + index * 10
+                            const top = 3 + index * 9
 
                             return (
                               <div
@@ -2137,33 +2134,46 @@ function RangeMap({
                                 style={{ top }}
                               >
                                 <div
-                                  className="absolute left-0 top-[3px] h-px rounded-full bg-white/18"
+                                  className="absolute left-0 top-[5px] h-[2px] rounded-full bg-white/18"
                                   style={{ width: mwpWidth }}
-                                  title={`${row.modelLabel} · DN ${row.dn} · MWP capability ${range.mwp} bar`}
+                                  title={`${row.modelLabel} · DN ${row.dn} · MWP ${range.mwp} bar`}
                                 />
+                                <span
+                                  className="absolute top-[1px] -translate-y-full rounded bg-[#242643]/90 px-1 text-[8px] font-black leading-none text-white/45"
+                                  style={{ left: mwpWidth }}
+                                  title={`MWP ${range.mwp} bar`}
+                                >
+                                  {range.mwp}
+                                </span>
                                 <div
-                                  className={`absolute h-2 rounded-full border ${accentClass}`}
+                                  className={`absolute h-3 rounded-full border ${accentClass}`}
                                   style={{ left: `${settingStart}%`, width: settingWidth }}
                                   title={`${row.modelLabel} · DN ${row.dn} · Setting ${range.settingLabel} · MWP ${range.mwp} bar · Port ${range.port}`}
                                 />
+                                <span
+                                  className="pointer-events-none absolute top-[1px] -translate-y-full whitespace-nowrap rounded bg-[#242643]/90 px-1 text-[8px] font-black leading-none text-white/70"
+                                  style={{ left: `${settingStart}%` }}
+                                >
+                                  {range.settingLabel}
+                                </span>
                               </div>
                             )
                           })}
                         </div>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-1 border-l border-white/10 px-2 py-2">
-                        {row.ports.slice(0, 3).map((port) => (
+                      <div className="flex flex-wrap items-center gap-1 border-l border-white/10 px-1.5 py-1.5">
+                        {row.ports.slice(0, 2).map((port) => (
                           <span
                             key={`${row.key}-${port}`}
-                            className="rounded-full border border-white/10 bg-white/[0.055] px-1.5 py-0.5 text-[10px] font-bold text-white/65"
+                            className="rounded-full border border-white/10 bg-white/[0.055] px-1.5 py-0.5 text-[9px] font-bold text-white/65"
                             title={`Port ${port}`}
                           >
                             {port}
                           </span>
                         ))}
-                        {row.ports.length > 3 && (
-                          <span className="text-[10px] font-bold text-white/45">+{row.ports.length - 3}</span>
+                        {row.ports.length > 2 && (
+                          <span className="text-[9px] font-bold text-white/45">+{row.ports.length - 2}</span>
                         )}
                       </div>
                     </div>
@@ -2175,8 +2185,8 @@ function RangeMap({
         </div>
       </div>
 
-      <div className="mt-3 text-xs text-gray-400">
-Exact article references, material and options remain hidden until final selection. Hover a segment to see setting range, MWP and port.
+      <div className="mt-2 text-[11px] text-gray-400">
+Hover a segment to see the exact setting range, MWP and port. Article reference, material and options stay hidden until final selection.
       </div>
     </div>
   )
