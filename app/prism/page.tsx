@@ -2027,7 +2027,7 @@ function RangeMap({
   const [hoveredModel, setHoveredModel] = useState<string | null>(null)
 
   const activeSource = activeProducts && activeProducts.length > 0 ? activeProducts : products
-  const activeIds = new Set(activeSource.map((product) => product.id))
+  const activeIds = new Set(activeSource.map((product) => String(product.id)))
 
   const rows = Array.from(
     products.reduce((dnMap, product) => {
@@ -2062,13 +2062,13 @@ function RangeMap({
             settingMax: settingRange.max,
             settingLabel: settingRange.label,
             count: 0,
-            productIds: [] as Array<string | number>,
+            productIds: [] as string[],
           }
           current.count += 1
-          current.productIds.push(product.id)
+          current.productIds.push(String(product.id))
           rangeMap.set(key, current)
           return rangeMap
-        }, new Map<string, { key: string; mwp: number; port: string; settingMin: number; settingMax: number; settingLabel: string; count: number; productIds: Array<string | number> }>()),
+        }, new Map<string, { key: string; mwp: number; port: string; settingMin: number; settingMax: number; settingLabel: string; count: number; productIds: string[] }>()),
       )
         .map(([, range]) => range)
         .filter((range) => range.mwp > 0)
