@@ -2062,13 +2062,13 @@ function RangeMap({
             settingMax: settingRange.max,
             settingLabel: settingRange.label,
             count: 0,
-            productIds: [] as string[],
+            productIds: [] as Array<string | number>,
           }
           current.count += 1
-          current.productIds.push(String(product.id))
+          current.productIds.push(product.id)
           rangeMap.set(key, current)
           return rangeMap
-        }, new Map<string, { key: string; mwp: number; port: string; settingMin: number; settingMax: number; settingLabel: string; count: number; productIds: string[] }>()),
+        }, new Map<string, { key: string; mwp: number; port: string; settingMin: number; settingMax: number; settingLabel: string; count: number; productIds: Array<string | number> }>()),
       )
         .map(([, range]) => range)
         .filter((range) => range.mwp > 0)
@@ -2090,7 +2090,7 @@ function RangeMap({
       const regulations = Array.from(
         new Set(row.products.map((product) => displayValue(product.regulation)).filter((value) => value !== "-"))
       ).sort()
-      const isActive = row.products.some((product) => activeIds.has(product.id))
+      const isActive = row.products.some((product) => activeIds.has(String(product.id)))
       const maxRowMwp = Math.max(...ranges.map((range) => range.mwp), 0)
 
       return { ...row, ranges, ports, bodyMaterials, regulations, isActive, maxRowMwp }
@@ -2211,7 +2211,7 @@ function RangeMap({
                             const settingEnd = Math.max(settingStart + 1, Math.min(100, (range.settingMax / maxMwp) * 100))
                             const settingWidth = `${Math.max(2.5, settingEnd - settingStart)}%`
                             const top = 3 + index * 9
-                            const rangeIsActive = range.productIds.some((id) => activeIds.has(id))
+                            const rangeIsActive = range.productIds.some((id) => activeIds.has(String(id)))
 
                             return (
                               <div
