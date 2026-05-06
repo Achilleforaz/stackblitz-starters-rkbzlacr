@@ -881,7 +881,8 @@ export default function PrismPage() {
         const row = items.slice(index, index + columns)
         const rowH = Math.max(...heights.slice(index, index + columns))
         row.forEach((item, rowIndex) => {
-          const cardX = x + rowIndex * (cardW + gap)
+          const isSingleCardInTwoColumnRow = columns === 2 && row.length === 1
+          const cardX = isSingleCardInTwoColumnRow ? x + (w - cardW) / 2 : x + rowIndex * (cardW + gap)
           const colors = item.tone ? toneColors(item.tone) : { text: ink, bg: white, border: rule }
           box(cardX, cursorY, cardW, rowH, colors.bg, colors.border, 2.5)
           write(item.label, cardX + 4, cursorY + 5.2, { size: 5.4, bold: true, color: muted, maxWidth: cardW - 8 })
@@ -1054,8 +1055,8 @@ export default function PrismPage() {
       const count = Math.max(reportConditions.length, 1)
       const labelW = 58
       const cellW = (w - labelW) / count
-      const headerH = 8
-      const rowH = 7.5
+      const headerH = 7
+      const rowH = 6.35
       const h = headerH + rows.length * rowH
 
       box(x, y, w, h, white, rule, 2.5)
@@ -1089,7 +1090,7 @@ export default function PrismPage() {
       const gap = 5
       const columns = reportConditions.length <= 2 ? reportConditions.length || 1 : 2
       const cardW = (w - gap * (columns - 1)) / columns
-      const cardH = 39
+      const cardH = 35
       reportConditions.forEach((condition, index) => {
         const col = index % columns
         const row = Math.floor(index / columns)
@@ -1103,26 +1104,31 @@ export default function PrismPage() {
 
         const leftX = cx + 4
         const rightX = cx + cardW - 4
-        write("Requested flow", leftX, cy + 15.2, { size: 5.3, bold: true, color: muted })
-        write(`${displayPdfValue(condition.flowNm3h)} Nm3/h`, rightX, cy + 15.2, { size: 6.1, bold: true, color: ink, align: "right" })
-        write("Max admissible flow", leftX, cy + 22.8, { size: 5.3, bold: true, color: muted })
-        write(`${displayPdfValue(condition.maxAdmissibleFlow)} Nm3/h`, rightX, cy + 22.8, { size: 6.1, bold: true, color: ink, align: "right" })
+        write("Requested flow", leftX, cy + 13.8, { size: 5.15, bold: true, color: muted })
+        write(`${displayPdfValue(condition.flowNm3h)} Nm3/h`, rightX, cy + 13.8, { size: 5.9, bold: true, color: ink, align: "right" })
+        write("Max admissible flow", leftX, cy + 20.5, { size: 5.15, bold: true, color: muted })
+        write(`${displayPdfValue(condition.maxAdmissibleFlow)} Nm3/h`, rightX, cy + 20.5, { size: 5.9, bold: true, color: ink, align: "right" })
 
         const utilization = Math.max(0, Math.min(Number(condition.utilizationPercent) || 0, 100))
         setFill(panel)
         setStroke(rule, 0.16)
-        pdf.roundedRect(leftX, cy + 27.5, cardW - 8, 4.2, 2, 2, "FD")
+        pdf.roundedRect(leftX, cy + 24.3, cardW - 8, 3.6, 1.8, 1.8, "FD")
         setFill(colors.text)
-        pdf.roundedRect(leftX, cy + 27.5, ((cardW - 8) * utilization) / 100, 4.2, 2, 2, "F")
-        write("Utilization", leftX, cy + 36.3, { size: 5.25, bold: true, color: muted })
-        write(`${displayPdfValue(condition.utilizationPercent)}%`, cx + cardW * 0.47, cy + 36.3, {
-          size: 5.9,
+        pdf.roundedRect(leftX, cy + 24.3, ((cardW - 8) * utilization) / 100, 3.6, 1.8, 1.8, "F")
+
+        const metricY = cy + 32.0
+        const utilLabelX = leftX
+        const utilValueX = leftX + 25
+        const marginLabelX = cx + cardW * 0.55
+        const marginValueX = marginLabelX + 22
+        write("Utilization", utilLabelX, metricY, { size: 5.05, bold: true, color: muted })
+        write(`${displayPdfValue(condition.utilizationPercent)}%`, utilValueX, metricY, {
+          size: 5.7,
           bold: true,
           color: colors.text,
-          align: "right",
         })
-        write("Margin", cx + cardW * 0.56, cy + 36.3, { size: 5.25, bold: true, color: muted })
-        write(`${displayPdfValue(condition.capacityMarginPercent)}%`, rightX, cy + 36.3, { size: 5.9, bold: true, color: ink, align: "right" })
+        write("Margin", marginLabelX, metricY, { size: 5.05, bold: true, color: muted })
+        write(`${displayPdfValue(condition.capacityMarginPercent)}%`, marginValueX, metricY, { size: 5.7, bold: true, color: ink })
       })
       return y + Math.ceil(reportConditions.length / columns) * cardH + (Math.ceil(reportConditions.length / columns) - 1) * gap
     }
@@ -1241,18 +1247,22 @@ export default function PrismPage() {
       { label: "Required port", value: sizingSummary.requiredConnector.label },
       { label: "Setting / regulation", value: `${displayPdfValue(product.setting)} / ${displayPdfValue(product.regulation)}` },
     ]
-    y = drawInfoGrid(summaryItems, margin, y, contentW, 5) + sectionGap
+    y = drawInfoGrid(summaryItems, margin, y, contentW, 5) + 3
 
-    y = ensureSpace(y, 60, "SIZING REPORT", "PRISM calculation engine - pressure regulator capacity validation")
+    y = ensureSpace(y, 50, "SIZING REPORT", "PRISM calculation engine - pressure regulator capacity validation")
     y = sectionTitle("Application working conditions", margin, y, contentW)
-    y = drawWorkingConditionsTable(margin, y, contentW) + sectionGap
+    y = drawWorkingConditionsTable(margin, y, contentW) + 3
 
-    const capacityNeeded = reportConditions.length > 2 ? 94 : 49
+    const capacityNeeded = reportConditions.length > 2 ? 80 : 44
     y = ensureSpace(y, capacityNeeded, "SIZING REPORT", "PRISM calculation engine - pressure regulator capacity validation")
     y = sectionTitle("Capacity", margin, y, contentW)
-    y = drawCapacityCards(margin, y, contentW) + sectionGap
+    y = drawCapacityCards(margin, y, contentW) + 3
 
-    y = ensureSpace(y, 49, "SIZING REPORT", "PRISM calculation engine - pressure regulator capacity validation")
+    const validationBlockHeight = 35
+    const validationSectionHeight = 10 + validationBlockHeight
+    if (y + validationSectionHeight > footerTop) {
+      y = Math.max(headerBottom + 7, footerTop - validationSectionHeight)
+    }
     y = sectionTitle("Sizing validation", margin, y, contentW)
     drawValidationBlock(margin, y, contentW)
 
