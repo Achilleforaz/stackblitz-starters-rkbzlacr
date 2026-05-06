@@ -669,8 +669,7 @@ export default function PrismPage() {
     const activeConditions = calculatedConditions.filter(
       (condition) => condition.inletPressure > 0 || condition.flowRateGs > 0 || Number(condition.flowNm3h) > 0
     )
-    const visibleConditions = (activeConditions.length > 0 ? activeConditions : calculatedConditions).slice(0, 4)
-    const reportConditions = visibleConditions.length > 0 ? visibleConditions : calculatedConditions.slice(0, 1)
+    const reportConditions = activeConditions.length > 0 ? activeConditions : calculatedConditions.slice(0, 1)
     const fluidCompatibilitySummary = buildFluidCompatibilitySummary(product, selectedFluid)
 
     const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true })
@@ -1088,9 +1087,10 @@ export default function PrismPage() {
 
     function drawCapacityCards(x: number, y: number, w: number) {
       const gap = 5
-      const columns = reportConditions.length <= 2 ? reportConditions.length || 1 : 2
+      const columns = reportConditions.length >= 5 ? 3 : reportConditions.length <= 2 ? reportConditions.length || 1 : 2
       const cardW = (w - gap * (columns - 1)) / columns
-      const cardH = 35
+      const compact = columns === 3
+      const cardH = compact ? 31 : 35
       reportConditions.forEach((condition, index) => {
         const col = index % columns
         const row = Math.floor(index / columns)
@@ -1099,36 +1099,42 @@ export default function PrismPage() {
         const tone = toneForStatus(condition.capacityStatus)
         const colors = toneColors(tone)
         box(cx, cy, cardW, cardH, white, colors.border, 3)
-        write(`C${condition.id}`, cx + 4, cy + 6.2, { size: 7.1, bold: true, color: ink })
-        statusPill(capacityStatusLabel(condition.capacityStatus), cx + cardW - 30, cy + 2.3, 26, tone)
+        write(`C${condition.id}`, cx + 4, cy + 6.2, { size: compact ? 6.7 : 7.1, bold: true, color: ink })
+        statusPill(capacityStatusLabel(condition.capacityStatus), cx + cardW - (compact ? 25 : 30), cy + 2.3, compact ? 21 : 26, tone)
 
         const leftX = cx + 4
         const rightX = cx + cardW - 4
-        write("Requested flow", leftX, cy + 13.8, { size: 5.15, bold: true, color: muted })
-        write(`${displayPdfValue(condition.flowNm3h)} Nm3/h`, rightX, cy + 13.8, { size: 5.9, bold: true, color: ink, align: "right" })
-        write("Max admissible flow", leftX, cy + 20.5, { size: 5.15, bold: true, color: muted })
-        write(`${displayPdfValue(condition.maxAdmissibleFlow)} Nm3/h`, rightX, cy + 20.5, { size: 5.9, bold: true, color: ink, align: "right" })
+        const labelSize = compact ? 4.65 : 5.15
+        const valueSize = compact ? 5.15 : 5.9
+        write("Requested flow", leftX, cy + 13.2, { size: labelSize, bold: true, color: muted })
+        write(`${displayPdfValue(condition.flowNm3h)} Nm3/h`, rightX, cy + 13.2, { size: valueSize, bold: true, color: ink, align: "right" })
+        write("Max admissible flow", leftX, cy + 19.0, { size: labelSize, bold: true, color: muted })
+        write(`${displayPdfValue(condition.maxAdmissibleFlow)} Nm3/h`, rightX, cy + 19.0, { size: valueSize, bold: true, color: ink, align: "right" })
 
         const utilization = Math.max(0, Math.min(Number(condition.utilizationPercent) || 0, 100))
         setFill(panel)
         setStroke(rule, 0.16)
-        pdf.roundedRect(leftX, cy + 24.3, cardW - 8, 3.6, 1.8, 1.8, "FD")
+        const barY = compact ? cy + 22.2 : cy + 24.3
+        pdf.roundedRect(leftX, barY, cardW - 8, 3.2, 1.6, 1.6, "FD")
         setFill(colors.text)
-        pdf.roundedRect(leftX, cy + 24.3, ((cardW - 8) * utilization) / 100, 3.6, 1.8, 1.8, "F")
+        pdf.roundedRect(leftX, barY, ((cardW - 8) * utilization) / 100, 3.2, 1.6, 1.6, "F")
 
-        const metricY = cy + 32.0
-        const utilLabelX = leftX
-        const utilValueX = leftX + 25
-        const marginLabelX = cx + cardW * 0.55
-        const marginValueX = marginLabelX + 22
-        write("Utilization", utilLabelX, metricY, { size: 5.05, bold: true, color: muted })
-        write(`${displayPdfValue(condition.utilizationPercent)}%`, utilValueX, metricY, {
-          size: 5.7,
+        const metricY = compact ? cy + 29.0 : cy + 32.0
+        const halfW = (cardW - 8) / 2
+        write("Utilization", leftX, metricY, { size: compact ? 4.55 : 5.05, bold: true, color: muted })
+        write(`${displayPdfValue(condition.utilizationPercent)}%`, leftX + halfW - 1.5, metricY, {
+          size: compact ? 5.05 : 5.7,
           bold: true,
           color: colors.text,
+          align: "right",
         })
-        write("Margin", marginLabelX, metricY, { size: 5.05, bold: true, color: muted })
-        write(`${displayPdfValue(condition.capacityMarginPercent)}%`, marginValueX, metricY, { size: 5.7, bold: true, color: ink })
+        write("Margin", leftX + halfW + 3, metricY, { size: compact ? 4.55 : 5.05, bold: true, color: muted })
+        write(`${displayPdfValue(condition.capacityMarginPercent)}%`, rightX, metricY, {
+          size: compact ? 5.05 : 5.7,
+          bold: true,
+          color: ink,
+          align: "right",
+        })
       })
       return y + Math.ceil(reportConditions.length / columns) * cardH + (Math.ceil(reportConditions.length / columns) - 1) * gap
     }
@@ -1253,7 +1259,10 @@ export default function PrismPage() {
     y = sectionTitle("Application working conditions", margin, y, contentW)
     y = drawWorkingConditionsTable(margin, y, contentW) + 3
 
-    const capacityNeeded = reportConditions.length > 2 ? 80 : 44
+    const capacityColumns = reportConditions.length >= 5 ? 3 : reportConditions.length <= 2 ? reportConditions.length || 1 : 2
+    const capacityRows = Math.ceil(reportConditions.length / capacityColumns)
+    const capacityCardH = capacityColumns === 3 ? 31 : 35
+    const capacityNeeded = 9 + capacityRows * capacityCardH + Math.max(0, capacityRows - 1) * 5
     y = ensureSpace(y, capacityNeeded, "SIZING REPORT", "PRISM calculation engine - pressure regulator capacity validation")
     y = sectionTitle("Capacity", margin, y, contentW)
     y = drawCapacityCards(margin, y, contentW) + 3
