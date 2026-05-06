@@ -102,12 +102,21 @@ type FilterKey =
   | "option"
 
 const initialConditions: Condition[] = [
-  { id: 1, inletPressure: 400, outletPressure: 70, flowRateGs: 420, temperature: 39 },
-  { id: 2, inletPressure: 330, outletPressure: 70, flowRateGs: 420, temperature: 39 },
-  { id: 3, inletPressure: 185, outletPressure: 70, flowRateGs: 385, temperature: -48 },
-  { id: 4, inletPressure: 130, outletPressure: 70, flowRateGs: 385, temperature: -48 },
+  { id: 1, inletPressure: 0, outletPressure: 0, flowRateGs: 0, temperature: 0 },
+  { id: 2, inletPressure: 0, outletPressure: 0, flowRateGs: 0, temperature: 0 },
+  { id: 3, inletPressure: 0, outletPressure: 0, flowRateGs: 0, temperature: 0 },
+  { id: 4, inletPressure: 0, outletPressure: 0, flowRateGs: 0, temperature: 0 },
   { id: 5, inletPressure: 0, outletPressure: 0, flowRateGs: 0, temperature: 0 },
 ]
+
+
+function numberInputValue(value: number) {
+  return value === 0 ? "" : String(value)
+}
+
+function parseNumberInput(value: string) {
+  return value === "" ? 0 : Number(value)
+}
 
 const emptyConditions: Condition[] = [
   { id: 1, inletPressure: 0, outletPressure: 0, flowRateGs: 0, temperature: 0 },
@@ -451,6 +460,16 @@ export default function PrismPage() {
     return computeFluidValues(selectedFluid, maxOutletPressure)
   }, [selectedFluid, maxOutletPressure])
 
+  const hasSizingInput = useMemo(() => {
+    return conditions.some(
+      (condition) =>
+        condition.inletPressure > 0 ||
+        condition.outletPressure > 0 ||
+        condition.flowRateGs > 0 ||
+        condition.temperature !== 0
+    )
+  }, [conditions])
+
   const sizingSummary = useMemo(() => {
     const active = conditions.filter((condition) => condition.inletPressure > 0)
 
@@ -660,7 +679,7 @@ export default function PrismPage() {
     navigator.clipboard.writeText(selectedConfiguration.newCode)
   }
 
-  async function downloadProductDatasheetPdf() {
+  async function downloadProductDatasheetPdf(mode: "download" | "preview" = "download") {
     if (!selectedConfiguration) return
 
     const { jsPDF } = await import("jspdf")
@@ -1280,6 +1299,11 @@ export default function PrismPage() {
       .replace(/^-+|-+$/g, "")
       .toLowerCase()
 
+    if (mode === "preview") {
+      const blob = pdf.output("blob")
+      return URL.createObjectURL(blob)
+    }
+
     pdf.save(`PRISM-datasheet-${safeCode || "product"}.pdf`)
   }
 
@@ -1642,9 +1666,9 @@ export default function PrismPage() {
                 <Field label="Inlet pressure bar g">
                   <input
                     type="number"
-                    value={condition.inletPressure}
+                    value={numberInputValue(condition.inletPressure)}
                     onChange={(event) =>
-                      updateCondition(index, "inletPressure", Number(event.target.value))
+                      updateCondition(index, "inletPressure", parseNumberInput(event.target.value))
                     }
                     className="input"
                   />
@@ -1653,9 +1677,9 @@ export default function PrismPage() {
                 <Field label="Outlet pressure bar g">
                   <input
                     type="number"
-                    value={condition.outletPressure}
+                    value={numberInputValue(condition.outletPressure)}
                     onChange={(event) =>
-                      updateCondition(index, "outletPressure", Number(event.target.value))
+                      updateCondition(index, "outletPressure", parseNumberInput(event.target.value))
                     }
                     className="input"
                   />
@@ -1664,9 +1688,9 @@ export default function PrismPage() {
                 <Field label="Flow rate g/s">
                   <input
                     type="number"
-                    value={condition.flowRateGs}
+                    value={numberInputValue(condition.flowRateGs)}
                     onChange={(event) =>
-                      updateCondition(index, "flowRateGs", Number(event.target.value))
+                      updateCondition(index, "flowRateGs", parseNumberInput(event.target.value))
                     }
                     className="input"
                   />
@@ -1675,9 +1699,9 @@ export default function PrismPage() {
                 <Field label="Fluid temperature C">
                   <input
                     type="number"
-                    value={condition.temperature}
+                    value={numberInputValue(condition.temperature)}
                     onChange={(event) =>
-                      updateCondition(index, "temperature", Number(event.target.value))
+                      updateCondition(index, "temperature", parseNumberInput(event.target.value))
                     }
                     className="input"
                   />
@@ -1698,34 +1722,34 @@ export default function PrismPage() {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-5">
             <Result
               label="Required seat"
-              value={`${sizingSummary.minRequiredSeatSize.toFixed(1)} mm`}
+              value={hasSizingInput ? `${sizingSummary.minRequiredSeatSize.toFixed(1)} mm` : "-"}
             />
 
             <Result
               label="Required port"
-              value={sizingSummary.requiredConnector.label}
+              value={hasSizingInput ? sizingSummary.requiredConnector.label : "-"}
             />
 
             <Result
               label="Recommended DN"
-              value={dnSizingProfile.recommendedDnLabel}
+              value={hasSizingInput ? dnSizingProfile.recommendedDnLabel : "-"}
             />
 
 
             <Result
               label="Required MWP"
-              value={`${sizingSummary.maxInletPressure} bar`}
+              value={hasSizingInput ? `${sizingSummary.maxInletPressure} bar` : "-"}
             />
 
             <Result
               label="Temperature range"
-              value={`${sizingSummary.minTemperature} / ${sizingSummary.maxTemperature} C`}
+              value={hasSizingInput ? `${sizingSummary.minTemperature} / ${sizingSummary.maxTemperature} C` : "-"}
             />
           </div>
 
           <button
             onClick={applySizing}
-            disabled={!selectedFluid}
+            disabled={!selectedFluid || !hasSizingInput}
             className="mt-8 flex h-14 w-full items-center justify-center rounded-2xl bg-gradient-to-r from-[#4500E8] to-[#FF4A4A] px-6 text-base font-black shadow-xl shadow-[#4500E8]/20 transition hover:-translate-y-0.5 hover:shadow-[#FF4A4A]/25 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:translate-y-0"
           >
             Apply sizing and show compatible products
@@ -2341,14 +2365,7 @@ function ProductDatasheet({
   selectedFluid,
   computedFluid,
   sizingSummary,
-  dnSizingProfile,
   conditions,
-  orderQuantity,
-  canViewPrices,
-  showDistributorPrices,
-  unitPrice,
-  totalPrice,
-  distributorDiscount,
   onDownloadPdf,
 }: {
   refElement: React.MutableRefObject<HTMLDivElement | null>
@@ -2364,19 +2381,47 @@ function ProductDatasheet({
   unitPrice: string
   totalPrice: string
   distributorDiscount: number
-  onDownloadPdf: () => void
+  onDownloadPdf: (mode?: "download" | "preview") => Promise<string | void>
 }) {
-  const reportConditions = buildDatasheetConditions(
-    product,
-    selectedFluid,
-    conditions,
-    sizingSummary
-  )
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null)
+  const [pdfPreviewLoading, setPdfPreviewLoading] = useState(false)
 
-  const datasheetFluidCompatibilitySummary = buildFluidCompatibilitySummary(
-    product,
-    selectedFluid
-  )
+  useEffect(() => {
+    let active = true
+    let previousUrl: string | null = null
+
+    async function refreshPreview() {
+      setPdfPreviewLoading(true)
+      try {
+        const nextUrl = await onDownloadPdf("preview")
+        if (!active) {
+          if (typeof nextUrl === "string") URL.revokeObjectURL(nextUrl)
+          return
+        }
+        if (typeof nextUrl === "string") {
+          setPdfPreviewUrl((currentUrl) => {
+            previousUrl = currentUrl
+            return nextUrl
+          })
+        }
+      } finally {
+        if (active) setPdfPreviewLoading(false)
+      }
+    }
+
+    refreshPreview()
+
+    return () => {
+      active = false
+      if (previousUrl) URL.revokeObjectURL(previousUrl)
+    }
+  }, [product, selectedFluid, computedFluid, sizingSummary, conditions, onDownloadPdf])
+
+  useEffect(() => {
+    return () => {
+      if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl)
+    }
+  }, [pdfPreviewUrl])
 
   return (
     <div className="mt-8 rounded-2xl border border-white/10 bg-[#10112b] p-5">
@@ -2384,153 +2429,30 @@ function ProductDatasheet({
         <div>
           <h3 className="text-xl font-bold">Product datasheet</h3>
           <p className="mt-1 text-sm text-gray-300">
-            Automatically generated when only one product remains selected.
+            Live preview generated from the same jsPDF engine as the downloaded report.
           </p>
         </div>
 
         <button
-          onClick={onDownloadPdf}
+          onClick={() => void onDownloadPdf()}
           className="datasheet-no-print inline-flex h-11 min-w-[140px] items-center justify-center rounded-xl bg-white px-5 text-sm font-black text-[#171838] transition hover:bg-gray-200"
         >
           Download PDF
         </button>
       </div>
 
-      <div ref={refElement} className="overflow-x-auto rounded-xl bg-white p-4 text-slate-950">
-        <div className="datasheet-card min-w-[980px] border-2 border-slate-950 bg-white p-5 text-slate-950">
-          <div className="mb-4 grid grid-cols-[1fr_1.4fr_1fr] items-start gap-4">
-            <div>
-              <img
-                src={IMF_LOGO_DATA_URL}
-                alt="IMF Valves & Regulation Solutions"
-                className="h-14 w-auto object-contain"
-              />
-            </div>
-
-            <div className="datasheet-title text-center text-xl font-black underline">
-              PRODUCT DATA SHEET
-            </div>
-
-            <div className="rounded-xl border border-slate-300 p-3 text-right">
-              <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-slate-500">Model</p>
-              <p className="text-4xl font-black text-[#4500E8]">
-                {displayValue(product.model)}
-              </p>
-            </div>
+      <div ref={refElement} className="overflow-hidden rounded-xl border border-white/10 bg-slate-100">
+        {pdfPreviewUrl ? (
+          <iframe
+            title="PRISM product datasheet PDF preview"
+            src={`${pdfPreviewUrl}#toolbar=0&navpanes=0&scrollbar=1`}
+            className="h-[760px] w-full bg-slate-100"
+          />
+        ) : (
+          <div className="flex h-[420px] items-center justify-center text-sm font-semibold text-slate-500">
+            {pdfPreviewLoading ? "Generating PDF preview..." : "PDF preview unavailable"}
           </div>
-
-          <div className="mb-3 grid grid-cols-[1fr_2fr] items-center gap-3">
-            <p className="datasheet-label text-xs font-black">Model Code:</p>
-            <p className="datasheet-value text-lg font-black text-[#4500E8]">
-              {displayValue(product.newCode, "Several models possible")}
-            </p>
-          </div>
-
-          <DatasheetSection title="Technical specification">
-            <div className="datasheet-grid grid grid-cols-2 gap-4">
-              <DatasheetLine label="Selected fluid" value={displayValue(selectedFluid?.name)} />
-              <DatasheetLine label="DN" value={displayValue(product.dn)} />
-              <DatasheetLine label="Temperature range" value={displayValue(product.workingTemp, `${sizingSummary.minTemperature} / ${sizingSummary.maxTemperature} °C`)} />
-              <DatasheetLine label="Section flow" value={displayNumber(sizingSummary.minRequiredSeatSize, " mm")} />
-              <DatasheetLine label="Max inlet pressure" value={displayValue(product.mwp)} />
-              <DatasheetLine label="Leakage rate" value={displayValue(product.leakageRate || product.leakageRateInternal || product.leakageRateExternal, "In accordance with selected sealing")} />
-              <DatasheetLine label="Outlet pressure range" value={`${Math.min(...reportConditions.map((item) => item.outletPressure || 0))} / ${Math.max(...reportConditions.map((item) => item.outletPressure || 0))} bar g`} />
-              <DatasheetLine label="In & outlet port" value={displayValue(product.port)} />
-            </div>
-            <div className="mt-3 rounded-lg border border-slate-300 bg-slate-50 p-3">
-              <p className="text-[11px] font-black text-slate-500">Fluid compatibility</p>
-              <p className="mt-1 text-xs font-black text-slate-800">{datasheetFluidCompatibilitySummary.compatibleLabel}</p>
-              <p className="mt-1 text-xs font-black text-amber-700">{datasheetFluidCompatibilitySummary.acceptableLabel}</p>
-            </div>
-          </DatasheetSection>
-
-          <DatasheetSection title="Materials">
-            <div className="datasheet-grid grid grid-cols-2 gap-4">
-              <DatasheetLine label="Body" value={displayValue(product.bodyMaterial)} />
-              <DatasheetLine label="Valve insert" value={displayValue(product.valveInsert, "According to selected configuration")} />
-              <DatasheetLine label="Sealing" value={displayValue(product.sealing)} />
-              <DatasheetLine label="Seat" value={displayValue(product.seat, "According to selected configuration")} />
-            </div>
-          </DatasheetSection>
-
-          <DatasheetSection title="Product features">
-            <div className="datasheet-grid grid grid-cols-2 gap-4">
-              <DatasheetLine label="Certification" value={displayValue(product.certification)} />
-              <DatasheetLine label="Options" value={displayValue(product.option)} />
-              <DatasheetLine label="Regulation" value={displayValue(product.regulation)} />
-              <DatasheetLine label="Setting" value={displayValue(product.setting)} />
-            </div>
-          </DatasheetSection>
-
-          <DatasheetSection title="Sizing report">
-            <div className="mb-3 grid grid-cols-2 gap-4">
-              <DatasheetLine label="Fluid" value={displayValue(selectedFluid?.name)} />
-              <DatasheetLine label="Fluid density" value={computedFluid ? `${computedFluid.density} kg/Nm3` : "-"} />
-              <DatasheetLine label="Required seat size" value={displayNumber(sizingSummary.minRequiredSeatSize, " mm")} />
-              <DatasheetLine label="Required port" value={displayValue(sizingSummary.requiredConnector.label)} />
-              <DatasheetLine label="Recommended DN" value={dnSizingProfile.recommendedDnLabel} />
-              <DatasheetLine label="Selected DN" value={displayValue(product.dn)} />
-              <DatasheetLine label="Regulation / setting" value={`${displayValue(product.regulation)} / ${displayValue(product.setting)}`} />
-            </div>
-
-            <table className="datasheet-table w-full border-collapse text-[11px]">
-              <thead>
-                <tr>
-                  <th className="border border-slate-950 bg-slate-200 p-2 text-left">Application working conditions</th>
-                  {reportConditions.slice(0, 5).map((condition) => (
-                    <th key={condition.id} className="border border-slate-950 bg-slate-200 p-2">
-                      #{condition.id}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                <DatasheetConditionRow label="Inlet Pressure (bar g)" values={reportConditions.map((item) => item.inletPressure)} />
-                <DatasheetConditionRow label="Outlet Pressure (bar g)" values={reportConditions.map((item) => item.outletPressure)} />
-                <DatasheetConditionRow label="Flow Rate (g/s)" values={reportConditions.map((item) => item.flowRateGs)} />
-                <DatasheetConditionRow label="Flow Rate (Nm3/h)" values={reportConditions.map((item) => item.flowNm3h)} />
-                <DatasheetConditionRow label="Fluid Temperature (°C)" values={reportConditions.map((item) => item.temperature)} />
-                <DatasheetConditionRow label="Outlet Velocity Threshold (m/s)" values={reportConditions.map((item) => item.gasSpeed)} />
-                <DatasheetConditionRow label="Seat size required (mm)" values={reportConditions.map((item) => item.seatSize)} />
-                <DatasheetConditionRow label="Outlet bore required (mm)" values={reportConditions.map((item) => item.outletBore)} />
-              </tbody>
-            </table>
-
-            <div className="mt-4 overflow-hidden rounded-lg border border-slate-300">
-              <div className="bg-[#6c38ff] px-3 py-2 text-center text-[11px] font-bold uppercase tracking-wide text-white">
-                Pressure Regulator Capacity
-              </div>
-              <table className="datasheet-table w-full border-collapse text-[11px]">
-                <thead>
-                  <tr>
-                    <th className="border border-slate-300 bg-slate-100 p-2 text-left">Capacity data</th>
-                    {reportConditions.slice(0, 5).map((condition) => (
-                      <th key={condition.id} className="border border-slate-300 bg-slate-100 p-2">
-                        #{condition.id}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  <DatasheetConditionRow label="Requested Flow (Nm3/h)" values={reportConditions.map((item) => item.flowNm3h)} />
-                  <DatasheetConditionRow label="Max admissible Flow (Nm3/h)" values={reportConditions.map((item) => item.maxAdmissibleFlow)} />
-                  <DatasheetConditionRow label="Utilization (%)" values={reportConditions.map((item) => item.utilizationPercent)} />
-                  <DatasheetConditionRow label="Capacity margin (%)" values={reportConditions.map((item) => item.capacityMarginPercent)} />
-                  <DatasheetConditionRow label="Status" values={reportConditions.map((item) => item.capacityStatus)} />
-                  <DatasheetConditionRow label="Expected outlet velocity (m/s)" values={reportConditions.map((item) => item.expectedVelocity)} />
-                </tbody>
-              </table>
-              <p className="px-3 py-2 text-[10px] font-semibold text-slate-500">
-                Capacity values are calculated from application working conditions.
-              </p>
-            </div>
-          </DatasheetSection>
-
-          <div className="mt-5 flex items-end justify-between text-[10px] text-slate-500">
-            <p>PRISM · automatically generated datasheet</p>
-            <p>Created by IMF Fluid regulation</p>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   )
