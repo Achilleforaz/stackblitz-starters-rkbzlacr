@@ -118,6 +118,24 @@ function parseNumberInput(value: string) {
   return value === "" ? 0 : Number(value)
 }
 
+function isCompleteSizingCondition(condition: Condition) {
+  return (
+    Number.isFinite(condition.inletPressure) &&
+    Number.isFinite(condition.outletPressure) &&
+    Number.isFinite(condition.flowRateGs) &&
+    Number.isFinite(condition.temperature) &&
+    condition.inletPressure > 0 &&
+    condition.outletPressure >= 0 &&
+    condition.flowRateGs > 0 &&
+    condition.inletPressure > condition.outletPressure &&
+    condition.temperature > -273
+  )
+}
+
+function getCompleteSizingConditions(conditions: Condition[]) {
+  return conditions.filter(isCompleteSizingCondition)
+}
+
 const emptyConditions: Condition[] = [
   { id: 1, inletPressure: 0, outletPressure: 0, flowRateGs: 0, temperature: 0 },
   { id: 2, inletPressure: 0, outletPressure: 0, flowRateGs: 0, temperature: 0 },
@@ -451,7 +469,7 @@ export default function PrismPage() {
   }
 
   const maxOutletPressure = useMemo(() => {
-    const active = conditions.filter((condition) => condition.inletPressure > 0)
+    const active = getCompleteSizingConditions(conditions)
     return Math.max(...active.map((condition) => condition.outletPressure), 0)
   }, [conditions])
 
@@ -461,17 +479,11 @@ export default function PrismPage() {
   }, [selectedFluid, maxOutletPressure])
 
   const hasSizingInput = useMemo(() => {
-    return conditions.some(
-      (condition) =>
-        condition.inletPressure > 0 ||
-        condition.outletPressure > 0 ||
-        condition.flowRateGs > 0 ||
-        condition.temperature !== 0
-    )
+    return getCompleteSizingConditions(conditions).length > 0
   }, [conditions])
 
   const sizingSummary = useMemo(() => {
-    const active = conditions.filter((condition) => condition.inletPressure > 0)
+    const active = getCompleteSizingConditions(conditions)
 
     const maxInletPressure = Math.max(
       ...active.map((condition) => condition.inletPressure),
@@ -685,10 +697,8 @@ export default function PrismPage() {
     const { jsPDF } = await import("jspdf")
     const product = selectedConfiguration
     const calculatedConditions = buildDatasheetConditions(product, selectedFluid, conditions, sizingSummary)
-    const activeConditions = calculatedConditions.filter(
-      (condition) => condition.inletPressure > 0 || condition.flowRateGs > 0 || Number(condition.flowNm3h) > 0
-    )
-    const reportConditions = activeConditions.length > 0 ? activeConditions : calculatedConditions.slice(0, 1)
+    const reportConditions = calculatedConditions.filter(isCompleteSizingCondition)
+    if (reportConditions.length === 0) return
     const fluidCompatibilitySummary = buildFluidCompatibilitySummary(product, selectedFluid)
 
     const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true })
@@ -1892,25 +1902,31 @@ export default function PrismPage() {
                 </button>
               </div>
 
-              <ProductDatasheet
-                refElement={datasheetRef}
-                product={selectedConfiguration}
-                selectedFluid={selectedFluid}
-                computedFluid={computedFluid}
-                sizingSummary={sizingSummary}
-                dnSizingProfile={dnSizingProfile}
-                conditions={conditions}
-                orderQuantity={normalizeOrderQuantity(orderQuantity)}
-                canViewPrices={canViewPrices}
-                showDistributorPrices={showDistributorPrices}
-                unitPrice={canViewPrices ? formatPrice(getProductPrice(selectedConfiguration)) : priceUnavailableLabel}
-                totalPrice={canViewPrices ? formatPrice(getProductTotalPrice(selectedConfiguration)) : priceUnavailableLabel}
-                distributorDiscount={getDistributorDiscount(
-                  selectedConfiguration.id,
-                  normalizeOrderQuantity(orderQuantity)
-                )}
-                onDownloadPdf={downloadProductDatasheetPdf}
-              />
+              {sizingApplied && hasSizingInput ? (
+                <ProductDatasheet
+                  refElement={datasheetRef}
+                  product={selectedConfiguration}
+                  selectedFluid={selectedFluid}
+                  computedFluid={computedFluid}
+                  sizingSummary={sizingSummary}
+                  dnSizingProfile={dnSizingProfile}
+                  conditions={conditions}
+                  orderQuantity={normalizeOrderQuantity(orderQuantity)}
+                  canViewPrices={canViewPrices}
+                  showDistributorPrices={showDistributorPrices}
+                  unitPrice={canViewPrices ? formatPrice(getProductPrice(selectedConfiguration)) : priceUnavailableLabel}
+                  totalPrice={canViewPrices ? formatPrice(getProductTotalPrice(selectedConfiguration)) : priceUnavailableLabel}
+                  distributorDiscount={getDistributorDiscount(
+                    selectedConfiguration.id,
+                    normalizeOrderQuantity(orderQuantity)
+                  )}
+                  onDownloadPdf={downloadProductDatasheetPdf}
+                />
+              ) : (
+                <div className="mt-8 rounded-2xl border border-amber-300/25 bg-amber-400/10 p-5 text-sm text-amber-50">
+                  Complete at least one valid working condition and apply sizing to generate the customer PDF datasheet.
+                </div>
+              )}
             </div>
           )}
 
@@ -2308,9 +2324,7 @@ function buildDatasheetConditions(
   conditions: Condition[],
   sizingSummary: DatasheetSizingSummary
 ) {
-  const activeConditions = sizingSummary.calculated.filter(
-    (condition) => condition.inletPressure > 0
-  )
+  const activeConditions = sizingSummary.calculated.filter(isCompleteSizingCondition)
   const baseConditions = activeConditions.length > 0 ? activeConditions : conditions
 
   if (!selectedFluid) return baseConditions
