@@ -79,6 +79,8 @@ export default function AdminPage() {
 
   const [selectedCategory, setSelectedCategory] = useState("Pressure Regulator")
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
+  const [modelPrice, setModelPrice] = useState("")
+  const [savingModelPrice, setSavingModelPrice] = useState(false)
 
   const [editProduct, setEditProduct] = useState<Product | null>(null)
   const [editCategory, setEditCategory] = useState<Category | null>(null)
@@ -243,6 +245,39 @@ export default function AdminPage() {
     })
   }, [products, selectedCategory, selectedModel])
 
+  const selectedModelProducts = useMemo(() => {
+    if (!selectedModel) return []
+
+    return products.filter(
+      (item) =>
+        (item.category || "Pressure Regulator") === selectedCategory &&
+        item.model_code === selectedModel
+    )
+  }, [products, selectedCategory, selectedModel])
+
+  const selectedModelPriceSummary = useMemo(() => {
+    const prices = selectedModelProducts
+      .map((product) => Number(String(product.price || "").replace(",", ".")))
+      .filter((value) => Number.isFinite(value))
+
+    if (!prices.length) return null
+
+    const min = Math.min(...prices)
+    const max = Math.max(...prices)
+    const average = prices.reduce((sum, value) => sum + value, 0) / prices.length
+    const unique = Array.from(new Set(prices.map((value) => String(value))))
+
+    return { min, max, average, isUniform: unique.length === 1 }
+  }, [selectedModelProducts])
+
+  function formatMoney(value: number) {
+    return new Intl.NumberFormat("fr-FR", {
+      style: "currency",
+      currency: "EUR",
+      maximumFractionDigits: 2,
+    }).format(value)
+  }
+
   function countProductsInCategory(categoryName: string) {
     return products.filter(
       (product) => (product.category || "Pressure Regulator") === categoryName
@@ -265,6 +300,41 @@ export default function AdminPage() {
       code: "",
       is_hidden: false,
     })
+  }
+
+  async function saveModelPrice() {
+    if (!selectedModel || savingModelPrice) return
+
+    setSavingModelPrice(true)
+    setMessage("")
+
+    try {
+      const result = await callCatalogApi({
+        action: "update_model_price",
+        category: selectedCategory,
+        modelCode: selectedModel,
+        price: modelPrice,
+      })
+
+      const updatedProducts: Product[] = result.products || []
+      const updatedById = new Map(updatedProducts.map((product) => [product.id, product]))
+
+      setProducts((current) =>
+        current.map((product) => updatedById.get(product.id) || product)
+      )
+
+      if (editProduct?.id && updatedById.has(editProduct.id)) {
+        setEditProduct(updatedById.get(editProduct.id) || editProduct)
+      }
+
+      setMessage(
+        `Model PR${selectedModel} price updated on ${updatedProducts.length} product(s). Product prices can still be overridden individually.`
+      )
+    } catch (error: any) {
+      setMessage(error.message)
+    }
+
+    setSavingModelPrice(false)
   }
 
   async function saveProduct() {
@@ -329,6 +399,7 @@ export default function AdminPage() {
 
           if (selectedCategory === oldCategory.name) {
             setSelectedCategory(result.category.name)
+        setModelPrice("")
           }
         }
       } else {
@@ -340,6 +411,7 @@ export default function AdminPage() {
 
         setCategories((current) => [...current, result.category])
         setSelectedCategory(result.category.name)
+        setModelPrice("")
       }
 
       setEditCategory(null)
@@ -379,6 +451,7 @@ export default function AdminPage() {
       if (selectedCategory === category.name) {
         setSelectedCategory("Pressure Regulator")
         setSelectedModel(null)
+        setModelPrice("")
       }
 
       if (editCategory?.id === category.id) {
@@ -539,6 +612,7 @@ export default function AdminPage() {
                         onClick={() => {
                           setSelectedCategory(category)
                           setSelectedModel(null)
+                          setModelPrice("")
                           setEditProduct(null)
                           setEditCategory(null)
                         }}
@@ -590,7 +664,10 @@ export default function AdminPage() {
               <h2 className="mb-4 text-xl font-black">Models</h2>
 
               <button
-                onClick={() => setSelectedModel(null)}
+                onClick={() => {
+                  setSelectedModel(null)
+                  setModelPrice("")
+                }}
                 className={`admin-list-button ${selectedModel === null ? "admin-list-button-active" : ""}`}
               >
                 All models
@@ -602,6 +679,7 @@ export default function AdminPage() {
                     key={model}
                     onClick={() => {
                       setSelectedModel(model)
+                      setModelPrice("")
                       setEditProduct(null)
                     }}
                     className={`admin-list-button ${selectedModel === model ? "admin-list-button-active" : ""}`}
@@ -614,6 +692,46 @@ export default function AdminPage() {
           </aside>
 
           <section className="admin-panel min-w-0">
+            {selectedModel && (
+              <div className="mb-6 rounded-3xl border border-purple-400/30 bg-white/10 p-5">
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+                  <div>
+                    <p className="admin-kicker">MODEL PRICE</p>
+                    <h3 className="mt-2 text-2xl font-black">PR{selectedModel}</h3>
+                    <p className="mt-2 text-sm font-semibold text-white/55">
+                      Set one price for the whole model. Individual products can still be edited from the product editor.
+                    </p>
+                    {selectedModelPriceSummary && (
+                      <p className="mt-2 text-xs font-semibold text-white/50">
+                        Current prices: average {formatMoney(selectedModelPriceSummary.average)} · min {formatMoney(selectedModelPriceSummary.min)} · max {formatMoney(selectedModelPriceSummary.max)} · {selectedModelPriceSummary.isUniform ? "uniform" : "product overrides detected"}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                    <label className="block min-w-[180px]">
+                      <span className="admin-label">Model price</span>
+                      <input
+                        value={modelPrice}
+                        onChange={(event) => setModelPrice(event.target.value)}
+                        placeholder="Example: 1250"
+                        className="admin-input w-full"
+                      />
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={saveModelPrice}
+                      disabled={savingModelPrice || !modelPrice.trim()}
+                      className="admin-action-button admin-action-button-primary disabled:opacity-60"
+                    >
+                      {savingModelPrice ? "Applying..." : "Apply to model"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <h2 className="text-2xl font-black">
