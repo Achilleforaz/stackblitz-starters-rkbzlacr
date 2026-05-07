@@ -90,6 +90,20 @@ async function loadDiscountRanges(productId: number) {
   return data || []
 }
 
+async function loadModelProductIds(category: string, modelCode: string) {
+  const { data, error } = await supabaseAdmin
+    .from("prism_configurations")
+    .select("id")
+    .eq("category", category)
+    .eq("model_code", modelCode)
+
+  if (error) throw new Error(error.message)
+
+  return (data || [])
+    .map((product: any) => Number(product.id))
+    .filter((id: number) => Number.isFinite(id))
+}
+
 async function saveSettingsWithKnownColumn(
   productId: number,
   value: number,
@@ -203,6 +217,77 @@ export async function POST(request: Request) {
       )
 
       return NextResponse.json({ settings })
+    }
+
+
+    if (body.action === "save_model_base_discount") {
+      const category = String(body.category || "Pressure Regulator").trim()
+      const modelCode = String(body.modelCode || "").trim()
+      const baseDiscountPercent = Number(body.baseDiscountPercent || 0)
+
+      if (!modelCode) {
+        return NextResponse.json({ error: "Missing model code" }, { status: 400 })
+      }
+
+      const productIds = await loadModelProductIds(category, modelCode)
+
+      for (const productId of productIds) {
+        const existingSettings = await loadDiscountSettings(productId)
+        await saveSettingsWithKnownColumn(
+          productId,
+          baseDiscountPercent,
+          existingSettings
+        )
+      }
+
+      return NextResponse.json({ updatedCount: productIds.length })
+    }
+
+    if (body.action === "replace_model_ranges") {
+      const category = String(body.category || "Pressure Regulator").trim()
+      const modelCode = String(body.modelCode || "").trim()
+      const ranges = Array.isArray(body.ranges) ? body.ranges : []
+
+      if (!modelCode) {
+        return NextResponse.json({ error: "Missing model code" }, { status: 400 })
+      }
+
+      const productIds = await loadModelProductIds(category, modelCode)
+
+      if (productIds.length) {
+        const deleteExisting = await supabaseAdmin
+          .from("product_distributor_discount_ranges")
+          .delete()
+          .in("product_id", productIds)
+
+        if (deleteExisting.error) {
+          return NextResponse.json({ error: deleteExisting.error.message }, { status: 400 })
+        }
+      }
+
+      const rows = productIds.flatMap((productId) =>
+        ranges.map((range: any) => ({
+          product_id: productId,
+          min_volume: Number(range.minVolume || 1),
+          max_volume:
+            range.maxVolume === null || range.maxVolume === ""
+              ? null
+              : Number(range.maxVolume),
+          discount_percent: Number(range.discountPercent || 0),
+        }))
+      )
+
+      if (rows.length) {
+        const { error } = await supabaseAdmin
+          .from("product_distributor_discount_ranges")
+          .insert(rows)
+
+        if (error) {
+          return NextResponse.json({ error: error.message }, { status: 400 })
+        }
+      }
+
+      return NextResponse.json({ updatedCount: productIds.length })
     }
 
     if (body.action === "add_range") {
