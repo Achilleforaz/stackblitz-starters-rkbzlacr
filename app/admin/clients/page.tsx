@@ -166,18 +166,9 @@ export default function AdminClientsPage() {
 
       if (activityResponse.ok) {
         activitySummaries = activityResult.clientActivity || []
-
-        if (activityResult.activityUnavailable || activityResult.warning) {
-          setMessageType("warning")
-          setMessage(activityResult.warning || "Clients loaded. PRISM activity tracking is not available yet.")
-        }
-      } else {
-        setMessageType("warning")
-        setMessage(activityResult.error || "Clients loaded. PRISM activity could not be loaded.")
       }
     } catch {
-      setMessageType("warning")
-      setMessage("Clients loaded. PRISM activity could not be loaded.")
+      activitySummaries = []
     }
 
     setClients(mergeClientsWithActivity(result.clients || [], activitySummaries))
