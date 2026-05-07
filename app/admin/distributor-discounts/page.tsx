@@ -39,6 +39,8 @@ type DiscountRange = {
 type SavingAction =
   | null
   | "base"
+  | "model-base"
+  | "model-ranges"
   | "add-range"
   | `range-${string}`
   | `delete-${string}`
@@ -50,6 +52,10 @@ export default function DistributorDiscountsPage() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null)
+  const [modelBaseDiscount, setModelBaseDiscount] = useState("")
+  const [modelRanges, setModelRanges] = useState<
+    { id: string; min_volume: number; max_volume: number | null; discount_percent: number }[]
+  >([])
 
   const [settings, setSettings] = useState<DiscountSettings | null>(null)
   const [ranges, setRanges] = useState<DiscountRange[]>([])
@@ -193,6 +199,17 @@ export default function DistributorDiscountsPage() {
     })
   }, [products, selectedCategory, selectedModel])
 
+  const selectedModelProducts = useMemo(() => {
+    if (!selectedModel) return []
+
+    return products.filter((product) => {
+      const categoryOk =
+        (product.category || "Pressure Regulator") === selectedCategory
+      const modelValue = product.model_code || product.model || ""
+      return categoryOk && modelValue === selectedModel
+    })
+  }, [products, selectedCategory, selectedModel])
+
   const selectedProduct = useMemo(() => {
     return products.find((product) => product.id === selectedProductId) || null
   }, [products, selectedProductId])
@@ -234,6 +251,152 @@ export default function DistributorDiscountsPage() {
     const discounted = numeric * (1 - Number(discountPercent || 0) / 100)
 
     return formatPrice(String(discounted))
+  }
+
+  function addModelRange() {
+    const sortedRanges = [...modelRanges].sort(
+      (a, b) => Number(a.min_volume) - Number(b.min_volume)
+    )
+    const lastRange = sortedRanges[sortedRanges.length - 1]
+    const defaultDiscount = Number(modelBaseDiscount || 0)
+
+    setModelRanges((current) => [
+      ...current,
+      {
+        id: `model-range-${Date.now()}-${current.length}`,
+        min_volume: lastRange?.max_volume ? Number(lastRange.max_volume) + 1 : 1,
+        max_volume: null,
+        discount_percent: lastRange?.discount_percent || defaultDiscount,
+      },
+    ])
+  }
+
+  function updateModelRangeLocal(
+    id: string,
+    field: "min_volume" | "max_volume" | "discount_percent",
+    value: string
+  ) {
+    setModelRanges((current) =>
+      current.map((range) =>
+        range.id === id
+          ? {
+              ...range,
+              [field]: field === "max_volume" && value === "" ? null : Number(value),
+            }
+          : range
+      )
+    )
+  }
+
+  function removeModelRange(id: string) {
+    setModelRanges((current) => current.filter((range) => range.id !== id))
+  }
+
+  async function saveModelBaseDiscount() {
+    if (!selectedModel || savingAction) return
+
+    setSavingAction("model-base")
+    setMessage("")
+
+    try {
+      const token = await getAccessToken()
+
+      if (!token) {
+        router.push("/admin/login")
+        return
+      }
+
+      const response = await fetch("/api/admin/distributor-discounts", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          action: "save_model_base_discount",
+          category: selectedCategory,
+          modelCode: selectedModel,
+          baseDiscountPercent: Number(modelBaseDiscount || 0),
+        }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        setMessage(result.error || "Unable to save model discount")
+        return
+      }
+
+      setMessage(
+        `Model PR${selectedModel} distributor discount applied to ${result.updatedCount || 0} product(s). Product overrides remain editable.`
+      )
+
+      if (selectedProductId) {
+        await loadDiscountData(selectedProductId)
+      }
+    } catch (error: any) {
+      setMessage(error.message || "Unable to save model discount")
+    } finally {
+      setSavingAction(null)
+    }
+  }
+
+  async function applyModelRanges() {
+    if (!selectedModel || savingAction) return
+
+    const ok = window.confirm(
+      `Replace distributor discount ranges for all PR${selectedModel} products?`
+    )
+    if (!ok) return
+
+    setSavingAction("model-ranges")
+    setMessage("")
+
+    try {
+      const token = await getAccessToken()
+
+      if (!token) {
+        router.push("/admin/login")
+        return
+      }
+
+      const response = await fetch("/api/admin/distributor-discounts", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          action: "replace_model_ranges",
+          category: selectedCategory,
+          modelCode: selectedModel,
+          ranges: modelRanges.map((range) => ({
+            minVolume: range.min_volume,
+            maxVolume: range.max_volume,
+            discountPercent: range.discount_percent,
+          })),
+        }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        setMessage(result.error || "Unable to save model ranges")
+        return
+      }
+
+      setMessage(
+        `Model PR${selectedModel} volume ranges applied to ${result.updatedCount || 0} product(s). Product ranges remain editable individually.`
+      )
+
+      if (selectedProductId) {
+        await loadDiscountData(selectedProductId)
+      }
+    } catch (error: any) {
+      setMessage(error.message || "Unable to save model ranges")
+    } finally {
+      setSavingAction(null)
+    }
   }
 
   function updateBaseDiscountLocal(value: string) {
@@ -528,6 +691,8 @@ export default function DistributorDiscountsPage() {
                       setSelectedCategory(category)
                       setSelectedModel(null)
                       setSelectedProductId(null)
+                      setModelBaseDiscount("")
+                      setModelRanges([])
                       setSettings(null)
                       setRanges([])
                     }}
@@ -555,6 +720,8 @@ export default function DistributorDiscountsPage() {
               onClick={() => {
                 setSelectedModel(null)
                 setSelectedProductId(null)
+                setModelBaseDiscount("")
+                setModelRanges([])
                 setSettings(null)
                 setRanges([])
               }}
@@ -575,6 +742,8 @@ export default function DistributorDiscountsPage() {
                   onClick={() => {
                     setSelectedModel(model)
                     setSelectedProductId(null)
+                    setModelBaseDiscount("")
+                    setModelRanges([])
                     setSettings(null)
                     setRanges([])
                   }}
@@ -594,6 +763,140 @@ export default function DistributorDiscountsPage() {
           </aside>
 
           <section className="rounded-3xl bg-white/10 p-5">
+            {selectedModel && (
+              <div className="mb-6 rounded-3xl border border-purple-400/30 bg-black/25 p-5">
+                <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.25em] text-purple-200">
+                      Model distributor rules
+                    </p>
+                    <h3 className="mt-2 text-2xl font-black">PR{selectedModel}</h3>
+                    <p className="mt-2 text-sm text-gray-300">
+                      Apply a default discount and volume ranges to all {selectedModelProducts.length} product(s) in this model. You can still override any product below.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-end gap-3">
+                    <label>
+                      <span className="mb-2 block text-sm font-semibold text-gray-300">
+                        Model default discount %
+                      </span>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        value={modelBaseDiscount}
+                        onChange={(event) => setModelBaseDiscount(event.target.value)}
+                        className="w-40 rounded-xl bg-white p-3 text-black"
+                      />
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={saveModelBaseDiscount}
+                      disabled={savingAction !== null || !modelBaseDiscount.trim()}
+                      className="rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {savingAction === "model-base" ? "Applying..." : "Apply discount"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-[#111] p-4">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h4 className="font-black">Model volume ranges</h4>
+                      <p className="mt-1 text-sm text-gray-400">
+                        These ranges replace the ranges of every product in the selected model.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={addModelRange}
+                      disabled={savingAction !== null}
+                      className="rounded-xl bg-green-600 px-4 py-2 text-sm font-bold hover:bg-green-700 disabled:opacity-50"
+                    >
+                      Add model range
+                    </button>
+                  </div>
+
+                  {modelRanges.length === 0 ? (
+                    <p className="rounded-xl bg-black/30 p-3 text-sm text-gray-300">
+                      No model range yet. Add ranges, then apply them to the model.
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {modelRanges.map((range, index) => (
+                        <div key={range.id} className="grid grid-cols-1 gap-3 rounded-xl bg-black/30 p-3 md:grid-cols-[1fr_1fr_1fr_auto] md:items-end">
+                          <label>
+                            <span className="mb-1 block text-xs font-semibold text-gray-300">
+                              Min volume #{index + 1}
+                            </span>
+                            <input
+                              type="number"
+                              value={range.min_volume}
+                              onChange={(event) =>
+                                updateModelRangeLocal(range.id, "min_volume", event.target.value)
+                              }
+                              className="w-full rounded-xl bg-white p-3 text-black"
+                            />
+                          </label>
+                          <label>
+                            <span className="mb-1 block text-xs font-semibold text-gray-300">
+                              Max volume
+                            </span>
+                            <input
+                              type="number"
+                              value={range.max_volume ?? ""}
+                              placeholder="∞"
+                              onChange={(event) =>
+                                updateModelRangeLocal(range.id, "max_volume", event.target.value)
+                              }
+                              className="w-full rounded-xl bg-white p-3 text-black"
+                            />
+                          </label>
+                          <label>
+                            <span className="mb-1 block text-xs font-semibold text-gray-300">
+                              Discount %
+                            </span>
+                            <input
+                              type="number"
+                              min="0"
+                              max="100"
+                              step="0.01"
+                              value={range.discount_percent}
+                              onChange={(event) =>
+                                updateModelRangeLocal(range.id, "discount_percent", event.target.value)
+                              }
+                              className="w-full rounded-xl bg-white p-3 text-black"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => removeModelRange(range.id)}
+                            disabled={savingAction !== null}
+                            className="rounded-xl bg-red-600 px-4 py-3 text-sm font-bold hover:bg-red-700 disabled:opacity-50"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={applyModelRanges}
+                    disabled={savingAction !== null}
+                    className="mt-4 rounded-xl bg-purple-600 px-4 py-3 text-sm font-bold hover:bg-purple-700 disabled:opacity-50"
+                  >
+                    {savingAction === "model-ranges" ? "Applying ranges..." : "Apply ranges to model"}
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-2xl font-black">Products</h2>
