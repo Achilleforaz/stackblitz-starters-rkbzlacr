@@ -1,10 +1,17 @@
 import { NextResponse } from "next/server"
 import { supabaseAdmin } from "@/app/lib/supabaseAdmin"
+import { getTechnicalDataByNewCode, pickTechnicalValue } from "@/app/lib/prism-technical-data"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
 
-type ActivityEventType = "search" | "datasheet"
+type AccessContext = {
+  canViewPrices: boolean
+  isAdmin: boolean
+  isDistributor: boolean
+  email: string | null
+  role: string | null
+}
 
 function clean(value: unknown) {
   if (value === null || value === undefined) return ""
@@ -15,159 +22,251 @@ function cleanEmail(value: unknown) {
   return clean(value).toLowerCase()
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+function parseBoolean(value: unknown) {
+  if (value === true) return true
+  if (value === false) return false
+  if (value === 1) return true
+  if (value === 0) return false
+
+  const normalized = clean(value).toLowerCase()
+  return ["true", "1", "yes", "y", "on", "enabled"].includes(normalized)
 }
 
-function isOptionalActivityTableError(error: any) {
-  const message = String(error?.message || error || "").toLowerCase()
-  const code = String(error?.code || "").toLowerCase()
+function normalizeProduct(item: any, canViewPrices: boolean) {
+  const newCode = clean(item.new_code ?? item["New Code"])
+  const technicalData = getTechnicalDataByNewCode(newCode)
 
-  return (
-    code === "42p01" ||
-    code === "42501" ||
-    message.includes("permission denied") ||
-    message.includes("does not exist") ||
-    message.includes("schema cache")
-  )
+  return {
+    id: item.id,
+    dn: clean(item.dn),
+    mwp: clean(item.mwp),
+    port: clean(item.port),
+    model: clean(item.model),
+    bodyMaterial: clean(item.body_material),
+    regulation: clean(item.regulation),
+    setting: clean(item.setting),
+    sealing: clean(item.sealing),
+    degreasing: clean(item.degreasing),
+    option: clean(item.option),
+    certification: pickTechnicalValue(item.certification, item["Certification"], technicalData.certification),
+    valveInsert: pickTechnicalValue(
+      item.mat_valve_insert,
+      item.valve_insert,
+      item.material_valve_insert,
+      item["MAT. Valve Insert"],
+      technicalData.valveInsert
+    ),
+    seat: pickTechnicalValue(item.mat_seat, item.seat, item.material_seat, item["MAT. Seat"], technicalData.seat),
+    workingTemp: pickTechnicalValue(
+      item.working_temp,
+      item.temperature_range,
+      item.working_temperature,
+      item["Working Temp"],
+      technicalData.workingTemp
+    ),
+    leakageRate: pickTechnicalValue(
+      item.leakage_rate,
+      item.leakage_rate_int,
+      item.leakage_rate_internal,
+      item["Leakage Rate Int."],
+      technicalData.leakageRateInternal
+    ),
+    leakageRateInternal: pickTechnicalValue(
+      item.leakage_rate_int,
+      item.leakage_rate_internal,
+      item["Leakage Rate Int."],
+      technicalData.leakageRateInternal
+    ),
+    leakageRateExternal: pickTechnicalValue(
+      item.leakage_rate_ext,
+      item.leakage_rate_external,
+      item["Leakage Rate Ext."],
+      technicalData.leakageRateExternal
+    ),
+    newCode,
+    price: canViewPrices ? clean(item.price) : "",
+  }
 }
 
-async function getClientProfile(request: Request) {
+function normalizeClient(client: any) {
+  if (!client) return null
+
+  return {
+    ...client,
+    email: cleanEmail(client.email),
+    can_view_prices: parseBoolean(client.can_view_prices),
+    is_distributor: parseBoolean(client.is_distributor),
+    is_active:
+      client.is_active === false || clean(client.is_active).toLowerCase() === "false"
+        ? false
+        : true,
+  }
+}
+
+function pickActive(rows: any[] | null | undefined) {
+  if (!Array.isArray(rows) || rows.length === 0) return null
+  return rows.find((row: any) => row.is_active !== false) || rows[0]
+}
+
+async function getAccessContext(request: Request): Promise<AccessContext> {
+  const empty: AccessContext = {
+    canViewPrices: false,
+    isAdmin: false,
+    isDistributor: false,
+    email: null,
+    role: null,
+  }
+
   const authHeader = request.headers.get("authorization")
 
-  if (!authHeader?.startsWith("Bearer ")) return null
+  if (!authHeader?.startsWith("Bearer ")) {
+    return empty
+  }
 
-  const token = authHeader.replace("Bearer ", "")
+  const token = authHeader.replace("Bearer ", "").trim()
+
   const {
     data: { user },
-    error: userError,
+    error,
   } = await supabaseAdmin.auth.getUser(token)
 
-  if (userError || !user?.email) return null
+  if (error || !user?.email) {
+    return empty
+  }
 
   const email = cleanEmail(user.email)
 
-  const { data, error } = await supabaseAdmin
-    .from("client_users")
+  const adminResult = await supabaseAdmin
+    .from("admin_users")
     .select("*")
-    .or(`email.ilike.${email},auth_user_id.eq.${user.id},user_id.eq.${user.id},id.eq.${user.id}`)
+    .ilike("email", email)
     .limit(20)
 
-  if (error) return null
+  const adminProfile = pickActive(adminResult.data)
 
-  const matches = data || []
-  const active = matches.find((client: any) => client.is_active !== false) || matches[0] || null
+  if (adminProfile && adminProfile.is_active !== false) {
+    return {
+      canViewPrices: true,
+      isAdmin: true,
+      isDistributor: false,
+      email,
+      role: adminProfile.role || "admin",
+    }
+  }
 
-  if (!active || active.is_active === false) return null
+  const clientResult = await supabaseAdmin
+    .from("client_users")
+    .select("*")
+    .ilike("email", email)
+    .limit(20)
+
+  const clientProfile = normalizeClient(pickActive(clientResult.data))
+
+  if (!clientProfile || clientProfile.is_active === false) {
+    return empty
+  }
+
+  const isDistributor = parseBoolean(clientProfile.is_distributor)
+  const canViewPrices = parseBoolean(clientProfile.can_view_prices) || isDistributor
 
   return {
-    ...active,
-    id: clean(active.id || user.id),
-    email: cleanEmail(active.email || email),
-    first_name: clean(active.first_name),
-    last_name: clean(active.last_name),
-    company: clean(active.company),
+    canViewPrices,
+    isAdmin: false,
+    isDistributor,
+    email,
+    role: null,
   }
 }
 
-function normalizeEventType(value: unknown): ActivityEventType | null {
-  const eventType = clean(value).toLowerCase()
-  if (eventType === "search" || eventType === "datasheet") return eventType
-  return null
+async function getDistributorDiscounts(canViewPrices: boolean) {
+  if (!canViewPrices) return {}
+
+  const [settingsResult, rangesResult] = await Promise.all([
+    supabaseAdmin.from("product_distributor_discount_settings").select("*"),
+    supabaseAdmin
+      .from("product_distributor_discount_ranges")
+      .select("*")
+      .order("min_volume"),
+  ])
+
+  const settings = settingsResult.data || []
+  const ranges = rangesResult.data || []
+
+  const map: Record<number, any> = {}
+
+  settings.forEach((item: any) => {
+    map[Number(item.product_id)] = {
+      defaultDiscount: Number(
+        item.base_discount_percent ??
+          item.default_discount_percent ??
+          item.default_distributor_discount_percent ??
+          item.discount_percent ??
+          0
+      ),
+      ranges: [],
+    }
+  })
+
+  ranges.forEach((range: any) => {
+    const productId = Number(range.product_id)
+
+    if (!map[productId]) {
+      map[productId] = {
+        defaultDiscount: 0,
+        ranges: [],
+      }
+    }
+
+    map[productId].ranges.push({
+      id: range.id,
+      product_id: productId,
+      min_volume: Number(range.min_volume),
+      max_volume: range.max_volume === null ? null : Number(range.max_volume),
+      discount_percent: Number(range.discount_percent || 0),
+    })
+  })
+
+  return map
 }
 
-export async function POST(request: Request) {
-  try {
-    const client = await getClientProfile(request)
+export async function GET(request: Request) {
+  const accessContext = await getAccessContext(request)
 
-    if (!client) {
-      return NextResponse.json({ skipped: true, reason: "No active client profile" })
-    }
-
-    const body = await request.json()
-    const eventType = normalizeEventType(body.eventType)
-
-    if (!eventType) {
-      return NextResponse.json({ error: "Invalid activity event type" }, { status: 400 })
-    }
-
-    const product = isRecord(body.product) ? body.product : {}
-    const productCode = clean(product.code || product.newCode || body.productCode)
-    const downloaded = Boolean(body.pdfDownloaded)
-
-    const basePayload = {
-      client_user_id: client.id,
-      user_email: client.email,
-      user_name: [client.first_name, client.last_name].filter(Boolean).join(" ").trim(),
-      company: client.company,
-      event_type: eventType,
-      selected_fluid: clean(body.selectedFluid),
-      product_code: productCode || null,
-      product_model: clean(product.model) || null,
-      product_snapshot: isRecord(product) ? product : {},
-      conditions: Array.isArray(body.conditions) ? body.conditions : [],
-      sizing_summary: isRecord(body.sizingSummary) ? body.sizingSummary : {},
-      matching_products_count: Number.isFinite(Number(body.matchingProductsCount))
-        ? Number(body.matchingProductsCount)
-        : null,
-      pdf_downloaded: downloaded,
-    }
-
-    if (eventType === "datasheet" && downloaded && productCode) {
-      const since = new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString()
-      const existing = await supabaseAdmin
-        .from("prism_client_activity")
-        .select("id")
-        .eq("client_user_id", client.id)
-        .eq("event_type", "datasheet")
-        .eq("product_code", productCode)
-        .eq("pdf_downloaded", false)
-        .gte("created_at", since)
-        .order("created_at", { ascending: false })
-        .limit(1)
-
-      if (!existing.error && existing.data?.[0]?.id) {
-        const { data, error } = await supabaseAdmin
-          .from("prism_client_activity")
-          .update({
-            ...basePayload,
-            pdf_downloaded: true,
-          })
-          .eq("id", existing.data[0].id)
-          .select("*")
-          .single()
-
-        if (error) {
-          if (isOptionalActivityTableError(error)) {
-            return NextResponse.json({ skipped: true, reason: "PRISM activity table unavailable" })
-          }
-
-          return NextResponse.json({ error: error.message }, { status: 400 })
-        }
-
-        return NextResponse.json({ activity: data })
-      }
-    }
-
-    const { data, error } = await supabaseAdmin
-      .from("prism_client_activity")
-      .insert(basePayload)
+  const [{ data, error }, distributorDiscounts] = await Promise.all([
+    supabaseAdmin
+      .from("prism_configurations")
       .select("*")
-      .single()
+      .eq("is_hidden", false)
+      .order("model"),
+    getDistributorDiscounts(accessContext.canViewPrices),
+  ])
 
-    if (error) {
-      if (isOptionalActivityTableError(error)) {
-        return NextResponse.json({ skipped: true, reason: "PRISM activity table unavailable" })
-      }
-
-      return NextResponse.json({ error: error.message }, { status: 400 })
-    }
-
-    return NextResponse.json({ activity: data })
-  } catch (error: any) {
+  if (error) {
     return NextResponse.json(
-      { error: error.message || "Unable to record PRISM activity" },
-      { status: 500 }
+      { error: "Unable to load catalog" },
+      { status: 400 }
     )
   }
+
+  return NextResponse.json(
+    {
+      products: (data || []).map((item) =>
+        normalizeProduct(item, accessContext.canViewPrices)
+      ),
+      distributorDiscounts,
+      access: {
+        canViewPrices: accessContext.canViewPrices,
+        isAdmin: accessContext.isAdmin,
+        isDistributor: accessContext.isDistributor,
+        email: accessContext.email,
+        role: accessContext.role,
+      },
+      canViewPrices: accessContext.canViewPrices,
+    },
+    {
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+      },
+    }
+  )
 }
