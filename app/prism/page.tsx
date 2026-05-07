@@ -303,6 +303,8 @@ function reconcileUserFilters(
 export default function PrismPage() {
   const configuratorRef = useRef<HTMLDivElement | null>(null)
   const datasheetRef = useRef<HTMLDivElement | null>(null)
+  const lastLoggedSearchSignatureRef = useRef("")
+  const lastLoggedDatasheetSignatureRef = useRef("")
 
   const [fluids, setFluids] = useState<PrismFluid[]>([])
   const [selectedFluidId, setSelectedFluidId] = useState("")
@@ -644,6 +646,107 @@ export default function PrismPage() {
     ? "Prices disabled by admin"
     : "Login required"
 
+  function buildActivityConditionsSnapshot() {
+    const calculatedById = new Map(
+      sizingSummary.calculated.map((condition) => [condition.id, condition])
+    )
+
+    return getCompleteSizingConditions(conditions).map((condition) => {
+      const calculated = calculatedById.get(condition.id) || condition
+
+      return {
+        id: condition.id,
+        inletPressure: condition.inletPressure,
+        outletPressure: condition.outletPressure,
+        flowRateGs: condition.flowRateGs,
+        temperature: condition.temperature,
+        flowNm3h: calculated.flowNm3h ?? null,
+        seatSize: calculated.seatSize ?? null,
+        outletBore: calculated.outletBore ?? null,
+        maxAdmissibleFlow: calculated.maxAdmissibleFlow ?? null,
+        utilizationPercent: calculated.utilizationPercent ?? null,
+        capacityMarginPercent: calculated.capacityMarginPercent ?? null,
+        capacityStatus: calculated.capacityStatus ?? null,
+      }
+    })
+  }
+
+  function buildActivitySizingSnapshot() {
+    return {
+      requiredSeat: sizingSummary.minRequiredSeatSize,
+      requiredOutletBore: sizingSummary.minRequiredOutletBore,
+      requiredConnector: sizingSummary.requiredConnector.label,
+      maxInletPressure: sizingSummary.maxInletPressure,
+      temperatureRange: {
+        min: sizingSummary.minTemperature,
+        max: sizingSummary.maxTemperature,
+      },
+      recommendedDn: dnSizingProfile.recommendedDnLabel,
+    }
+  }
+
+  function buildActivitySignature(product?: PrismConfiguration | null, downloaded = false) {
+    return JSON.stringify({
+      eventProduct: product?.newCode || null,
+      downloaded,
+      fluid: selectedFluid?.name || selectedFluidId || null,
+      conditions: buildActivityConditionsSnapshot(),
+      requiredSeat: sizingSummary.minRequiredSeatSize,
+      requiredOutletBore: sizingSummary.minRequiredOutletBore,
+    })
+  }
+
+  async function logPrismActivity(
+    eventType: "search" | "datasheet",
+    product?: PrismConfiguration | null,
+    pdfDownloaded = false
+  ) {
+    if (!clientProfile?.id || adminProfile) return
+
+    const token = await getAccessToken()
+    if (!token) return
+
+    await fetch("/api/prism/activity", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        eventType,
+        selectedFluid: selectedFluid?.name || selectedFluidId || "",
+        product: product
+          ? {
+              id: product.id,
+              code: product.newCode,
+              model: product.model,
+              dn: product.dn,
+              mwp: product.mwp,
+              port: product.port,
+              setting: product.setting,
+              bodyMaterial: product.bodyMaterial,
+              regulation: product.regulation,
+              sealing: product.sealing,
+            }
+          : null,
+        conditions: buildActivityConditionsSnapshot(),
+        sizingSummary: buildActivitySizingSnapshot(),
+        matchingProductsCount: filteredConfigurations.length,
+        pdfDownloaded,
+      }),
+    }).catch(() => null)
+  }
+
+  useEffect(() => {
+    if (!sizingApplied || !selectedConfiguration || !clientProfile?.id || adminProfile) return
+
+    const signature = buildActivitySignature(selectedConfiguration, false)
+    if (lastLoggedDatasheetSignatureRef.current === signature) return
+
+    lastLoggedDatasheetSignatureRef.current = signature
+    void logPrismActivity("datasheet", selectedConfiguration, false)
+  }, [sizingApplied, selectedConfiguration, clientProfile?.id, adminProfile, selectedFluid, selectedFluidId, conditions, sizingSummary, filteredConfigurations.length])
+
   function updateCondition(index: number, field: keyof Condition, value: number) {
     const updated = [...conditions]
     updated[index] = { ...updated[index], [field]: value }
@@ -652,9 +755,16 @@ export default function PrismPage() {
   }
 
   function applySizing() {
+    const signature = buildActivitySignature(null, false)
+
     setSizingApplied(true)
     setMinRequiredSeatSize(sizingSummary.minRequiredSeatSize)
     setMinRequiredOutletBoreSize(sizingSummary.minRequiredOutletBore)
+
+    if (lastLoggedSearchSignatureRef.current !== signature) {
+      lastLoggedSearchSignatureRef.current = signature
+      void logPrismActivity("search")
+    }
 
     setTimeout(() => {
       configuratorRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -1314,6 +1424,7 @@ export default function PrismPage() {
       return URL.createObjectURL(blob)
     }
 
+    await logPrismActivity("datasheet", product, true)
     pdf.save(`PRISM-datasheet-${safeCode || "product"}.pdf`)
   }
 
