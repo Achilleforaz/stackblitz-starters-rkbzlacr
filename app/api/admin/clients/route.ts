@@ -1,196 +1,84 @@
 import { NextResponse } from "next/server"
-import { supabaseAdmin } from "@/app/lib/supabaseAdmin"
+import { createClient } from "@supabase/supabase-js"
 
-export const dynamic = "force-dynamic"
-export const revalidate = 0
+function createUserSupabaseClient(request: Request) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-function clean(value: unknown) {
-  if (value === null || value === undefined) return ""
-  return String(value).trim()
-}
-
-function cleanEmail(value: unknown) {
-  return clean(value).toLowerCase()
-}
-
-function isOptionalActivityTableError(error: any) {
-  const message = String(error?.message || error || "").toLowerCase()
-  const code = String(error?.code || "").toLowerCase()
-
-  return (
-    code === "42p01" ||
-    code === "42501" ||
-    message.includes("permission denied") ||
-    message.includes("does not exist") ||
-    message.includes("schema cache")
-  )
-}
-
-async function getAdminProfile(request: Request) {
-  const authHeader = request.headers.get("authorization")
-
-  if (!authHeader?.startsWith("Bearer ")) return null
-
-  const token = authHeader.replace("Bearer ", "")
-  const {
-    data: { user },
-    error: userError,
-  } = await supabaseAdmin.auth.getUser(token)
-
-  if (userError || !user?.email) return null
-
-  const email = cleanEmail(user.email)
-
-  const byEmail = await supabaseAdmin
-    .from("admin_users")
-    .select("*")
-    .ilike("email", email)
-    .limit(20)
-
-  if (byEmail.error) return null
-
-  const emailMatches = byEmail.data || []
-  let adminProfile =
-    emailMatches.find((profile: any) => profile.is_active !== false) ||
-    emailMatches[0] ||
-    null
-
-  if (!adminProfile) {
-    const byAuthUserId = await supabaseAdmin
-      .from("admin_users")
-      .select("*")
-      .eq("auth_user_id", user.id)
-      .limit(20)
-
-    if (!byAuthUserId.error) {
-      const authUserIdMatches = byAuthUserId.data || []
-      adminProfile =
-        authUserIdMatches.find((profile: any) => profile.is_active !== false) ||
-        authUserIdMatches[0] ||
-        null
-    }
+  if (!supabaseUrl) {
+    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL")
   }
 
-  if (!adminProfile || adminProfile.is_active === false) return null
-
-  return {
-    ...adminProfile,
-    email: cleanEmail(adminProfile.email || email),
-    role: adminProfile.role || "admin",
-  }
-}
-
-async function requireAdmin(request: Request) {
-  const profile = await getAdminProfile(request)
-
-  if (!profile) {
-    return {
-      profile: null,
-      error: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
-    }
+  if (!supabaseAnonKey) {
+    throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY")
   }
 
-  return { profile, error: null }
+  const authHeader = request.headers.get("authorization") || ""
+
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    global: {
+      headers: {
+        authorization: authHeader,
+      },
+    },
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  })
 }
 
 export async function GET(request: Request) {
-  const { error } = await requireAdmin(request)
-  if (error) return error
+  try {
+    const supabase = createUserSupabaseClient(request)
 
-  const { data, error: activityError } = await supabaseAdmin
-    .from("prism_client_activity")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(1000)
+    const { data, error } = await supabase.rpc("admin_list_client_users")
 
-  if (activityError) {
-    return NextResponse.json({
-      clientActivity: [],
-      activityUnavailable: true,
-      warning:
-        isOptionalActivityTableError(activityError)
-          ? "PRISM activity tracking is not available yet. Run supabase/prism-client-activity.sql, then reload this page."
-          : `Clients loaded. PRISM activity tracking is temporarily unavailable: ${activityError.message}`,
-    })
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+
+    return NextResponse.json({ clients: data || [] })
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.message || "Unable to load clients" },
+      { status: 500 }
+    )
   }
-
-  const grouped = new Map<string, any>()
-
-  for (const row of data || []) {
-    const clientId = clean(row.client_user_id || row.user_email || "unknown")
-    const existing = grouped.get(clientId) || {
-      clientId,
-      searchCount: 0,
-      datasheets: [],
-      lastActivityAt: null,
-    }
-
-    if (!existing.lastActivityAt || new Date(row.created_at) > new Date(existing.lastActivityAt)) {
-      existing.lastActivityAt = row.created_at
-    }
-
-    if (row.event_type === "search") {
-      existing.searchCount += 1
-    }
-
-    if (row.event_type === "datasheet") {
-      existing.datasheets.push(row)
-    }
-
-    grouped.set(clientId, existing)
-  }
-
-  return NextResponse.json({ clientActivity: Array.from(grouped.values()) })
 }
 
 export async function POST(request: Request) {
-  const { profile, error } = await requireAdmin(request)
-  if (error) return error
-
   try {
+    const supabase = createUserSupabaseClient(request)
     const body = await request.json()
 
-    if (body.action !== "update_follow_up") {
+    if (body.action !== "update_client_access") {
       return NextResponse.json({ error: "Unknown action" }, { status: 400 })
     }
 
-    const activityId = clean(body.activityId)
+    const id = String(body.id || "").trim()
 
-    if (!activityId) {
-      return NextResponse.json({ error: "Missing activity id" }, { status: 400 })
+    if (!id) {
+      return NextResponse.json({ error: "Missing client id" }, { status: 400 })
     }
 
-    const followedUp = Boolean(body.followedUp)
+    const discount = Number(body.distributorDiscountPercent || 0)
 
-    const { data, error: updateError } = await supabaseAdmin
-      .from("prism_client_activity")
-      .update({
-        followed_up: followedUp,
-        followed_up_at: followedUp ? new Date().toISOString() : null,
-        followed_up_by: followedUp ? profile?.email || null : null,
-      })
-      .eq("id", activityId)
-      .select("*")
-      .single()
+    const { data, error } = await supabase.rpc("admin_update_client_access", {
+      client_id: id,
+      new_can_view_prices: Boolean(body.canViewPrices),
+      new_is_distributor: Boolean(body.isDistributor),
+      new_distributor_discount_percent: Number.isFinite(discount) ? discount : 0,
+    })
 
-    if (updateError) {
-      if (isOptionalActivityTableError(updateError)) {
-        return NextResponse.json(
-          {
-            error:
-              "PRISM activity tracking is not available yet. Run supabase/prism-client-activity.sql, then try again.",
-          },
-          { status: 503 }
-        )
-      }
-
-      return NextResponse.json({ error: updateError.message }, { status: 400 })
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
     }
 
-    return NextResponse.json({ activity: data })
+    return NextResponse.json({ client: data?.[0] || null })
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Unable to update client activity" },
+      { error: error.message || "Unable to update client" },
       { status: 500 }
     )
   }
