@@ -13,6 +13,19 @@ function cleanEmail(value: unknown) {
   return clean(value).toLowerCase()
 }
 
+function isOptionalActivityTableError(error: any) {
+  const message = String(error?.message || error || "").toLowerCase()
+  const code = String(error?.code || "").toLowerCase()
+
+  return (
+    code === "42p01" ||
+    code === "42501" ||
+    message.includes("permission denied") ||
+    message.includes("does not exist") ||
+    message.includes("schema cache")
+  )
+}
+
 async function getAdminProfile(request: Request) {
   const authHeader = request.headers.get("authorization")
 
@@ -91,6 +104,15 @@ export async function GET(request: Request) {
     .limit(1000)
 
   if (activityError) {
+    if (isOptionalActivityTableError(activityError)) {
+      return NextResponse.json({
+        clientActivity: [],
+        activityUnavailable: true,
+        warning:
+          "PRISM activity tracking is not available yet. Run supabase/prism-client-activity.sql, then reload this page.",
+      })
+    }
+
     return NextResponse.json({ error: activityError.message }, { status: 400 })
   }
 
@@ -154,6 +176,16 @@ export async function POST(request: Request) {
       .single()
 
     if (updateError) {
+      if (isOptionalActivityTableError(updateError)) {
+        return NextResponse.json(
+          {
+            error:
+              "PRISM activity tracking is not available yet. Run supabase/prism-client-activity.sql, then try again.",
+          },
+          { status: 503 }
+        )
+      }
+
       return NextResponse.json({ error: updateError.message }, { status: 400 })
     }
 
