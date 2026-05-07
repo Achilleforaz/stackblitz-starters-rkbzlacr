@@ -109,6 +109,7 @@ export default function AdminClientsPage() {
   const [clients, setClients] = useState<ClientUser[]>([])
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState("")
+  const [messageType, setMessageType] = useState<"error" | "warning" | "info">("info")
   const [savingId, setSavingId] = useState<string | null>(null)
   const [savingActivityId, setSavingActivityId] = useState<string | null>(null)
   const [expandedClientId, setExpandedClientId] = useState<string | null>(null)
@@ -127,6 +128,7 @@ export default function AdminClientsPage() {
 
   async function loadClients() {
     setMessage("")
+    setMessageType("info")
     setLoading(true)
 
     const token = await getAccessToken()
@@ -146,6 +148,7 @@ export default function AdminClientsPage() {
 
     if (!clientsResponse.ok) {
       setLoading(false)
+      setMessageType("error")
       setMessage(result.error || "Unable to load clients")
       return
     }
@@ -165,12 +168,15 @@ export default function AdminClientsPage() {
         activitySummaries = activityResult.clientActivity || []
 
         if (activityResult.activityUnavailable || activityResult.warning) {
+          setMessageType("warning")
           setMessage(activityResult.warning || "Clients loaded. PRISM activity tracking is not available yet.")
         }
       } else {
+        setMessageType("warning")
         setMessage(activityResult.error || "Clients loaded. PRISM activity could not be loaded.")
       }
     } catch {
+      setMessageType("warning")
       setMessage("Clients loaded. PRISM activity could not be loaded.")
     }
 
@@ -180,6 +186,7 @@ export default function AdminClientsPage() {
 
   async function updateClientAccess(updatedClient: ClientUser) {
     setMessage("")
+    setMessageType("info")
     setSavingId(updatedClient.id)
 
     const token = await getAccessToken()
@@ -208,6 +215,7 @@ export default function AdminClientsPage() {
     setSavingId(null)
 
     if (!response.ok) {
+      setMessageType("error")
       setMessage(result.error || "Unable to update client")
       return
     }
@@ -228,6 +236,7 @@ export default function AdminClientsPage() {
 
   async function updateDatasheetFollowUp(activityId: string, followedUp: boolean) {
     setMessage("")
+    setMessageType("info")
     setSavingActivityId(activityId)
 
     const token = await getAccessToken()
@@ -254,6 +263,7 @@ export default function AdminClientsPage() {
     setSavingActivityId(null)
 
     if (!response.ok) {
+      setMessageType("error")
       setMessage(result.error || "Unable to update follow-up status")
       return
     }
@@ -329,7 +339,13 @@ export default function AdminClientsPage() {
         </header>
 
         {message && (
-          <div className="admin-alert admin-alert-error mb-6">
+          <div
+            className={
+              messageType === "error"
+                ? "admin-alert admin-alert-error mb-6"
+                : "mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-300/30 bg-amber-500/10 p-4 text-sm font-bold text-amber-100"
+            }
+          >
             <span>{message}</span>
             <button
               onClick={() => setMessage("")}
