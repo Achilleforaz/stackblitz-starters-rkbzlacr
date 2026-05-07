@@ -19,6 +19,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value)
 }
 
+function isOptionalActivityTableError(error: any) {
+  const message = String(error?.message || error || "").toLowerCase()
+  const code = String(error?.code || "").toLowerCase()
+
+  return (
+    code === "42p01" ||
+    code === "42501" ||
+    message.includes("permission denied") ||
+    message.includes("does not exist") ||
+    message.includes("schema cache")
+  )
+}
+
 async function getClientProfile(request: Request) {
   const authHeader = request.headers.get("authorization")
 
@@ -125,6 +138,10 @@ export async function POST(request: Request) {
           .single()
 
         if (error) {
+          if (isOptionalActivityTableError(error)) {
+            return NextResponse.json({ skipped: true, reason: "PRISM activity table unavailable" })
+          }
+
           return NextResponse.json({ error: error.message }, { status: 400 })
         }
 
@@ -139,6 +156,10 @@ export async function POST(request: Request) {
       .single()
 
     if (error) {
+      if (isOptionalActivityTableError(error)) {
+        return NextResponse.json({ skipped: true, reason: "PRISM activity table unavailable" })
+      }
+
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
 
