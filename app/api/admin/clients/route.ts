@@ -104,16 +104,14 @@ export async function GET(request: Request) {
     .limit(1000)
 
   if (activityError) {
-    if (isOptionalActivityTableError(activityError)) {
-      return NextResponse.json({
-        clientActivity: [],
-        activityUnavailable: true,
-        warning:
-          "PRISM activity tracking is not available yet. Run supabase/prism-client-activity.sql, then reload this page.",
-      })
-    }
-
-    return NextResponse.json({ error: activityError.message }, { status: 400 })
+    return NextResponse.json({
+      clientActivity: [],
+      activityUnavailable: true,
+      warning:
+        isOptionalActivityTableError(activityError)
+          ? "PRISM activity tracking is not available yet. Run supabase/prism-client-activity.sql, then reload this page."
+          : `Clients loaded. PRISM activity tracking is temporarily unavailable: ${activityError.message}`,
+    })
   }
 
   const grouped = new Map<string, any>()
