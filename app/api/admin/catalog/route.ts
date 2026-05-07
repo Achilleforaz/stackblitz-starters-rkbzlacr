@@ -280,6 +280,32 @@ export async function POST(request: Request) {
     return NextResponse.json({ product: data })
   }
 
+
+  if (action === "update_model_price") {
+    const category = String(body.category || "Pressure Regulator").trim()
+    const modelCode = String(body.modelCode || "").trim()
+    const price = String(body.price || "").trim()
+
+    if (!modelCode) {
+      return NextResponse.json({ error: "Missing model code" }, { status: 400 })
+    }
+
+    if (!price) {
+      return NextResponse.json({ error: "Missing model price" }, { status: 400 })
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from("prism_configurations")
+      .update({ price })
+      .eq("category", category)
+      .eq("model_code", modelCode)
+      .select("*")
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+
+    return NextResponse.json({ products: data || [] })
+  }
+
   if (action === "delete_product") {
     if (profile?.role !== "superadmin") {
       return NextResponse.json({ error: "Only superadmin can delete products" }, { status: 403 })
