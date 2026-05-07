@@ -1,84 +1,166 @@
 import { NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
+import { supabaseAdmin } from "@/app/lib/supabaseAdmin"
 
-function createUserSupabaseClient(request: Request) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+export const dynamic = "force-dynamic"
+export const revalidate = 0
 
-  if (!supabaseUrl) {
-    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL")
+function clean(value: unknown) {
+  if (value === null || value === undefined) return ""
+  return String(value).trim()
+}
+
+function cleanEmail(value: unknown) {
+  return clean(value).toLowerCase()
+}
+
+async function getAdminProfile(request: Request) {
+  const authHeader = request.headers.get("authorization")
+
+  if (!authHeader?.startsWith("Bearer ")) return null
+
+  const token = authHeader.replace("Bearer ", "")
+  const {
+    data: { user },
+    error: userError,
+  } = await supabaseAdmin.auth.getUser(token)
+
+  if (userError || !user?.email) return null
+
+  const email = cleanEmail(user.email)
+
+  const byEmail = await supabaseAdmin
+    .from("admin_users")
+    .select("*")
+    .ilike("email", email)
+    .limit(20)
+
+  if (byEmail.error) return null
+
+  const emailMatches = byEmail.data || []
+  let adminProfile =
+    emailMatches.find((profile: any) => profile.is_active !== false) ||
+    emailMatches[0] ||
+    null
+
+  if (!adminProfile) {
+    const byAuthUserId = await supabaseAdmin
+      .from("admin_users")
+      .select("*")
+      .eq("auth_user_id", user.id)
+      .limit(20)
+
+    if (!byAuthUserId.error) {
+      const authUserIdMatches = byAuthUserId.data || []
+      adminProfile =
+        authUserIdMatches.find((profile: any) => profile.is_active !== false) ||
+        authUserIdMatches[0] ||
+        null
+    }
   }
 
-  if (!supabaseAnonKey) {
-    throw new Error("Missing NEXT_PUBLIC_SUPABASE_ANON_KEY")
+  if (!adminProfile || adminProfile.is_active === false) return null
+
+  return {
+    ...adminProfile,
+    email: cleanEmail(adminProfile.email || email),
+    role: adminProfile.role || "admin",
+  }
+}
+
+async function requireAdmin(request: Request) {
+  const profile = await getAdminProfile(request)
+
+  if (!profile) {
+    return {
+      profile: null,
+      error: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
+    }
   }
 
-  const authHeader = request.headers.get("authorization") || ""
-
-  return createClient(supabaseUrl, supabaseAnonKey, {
-    global: {
-      headers: {
-        authorization: authHeader,
-      },
-    },
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  })
+  return { profile, error: null }
 }
 
 export async function GET(request: Request) {
-  try {
-    const supabase = createUserSupabaseClient(request)
+  const { error } = await requireAdmin(request)
+  if (error) return error
 
-    const { data, error } = await supabase.rpc("admin_list_client_users")
+  const { data, error: activityError } = await supabaseAdmin
+    .from("prism_client_activity")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(1000)
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 })
+  if (activityError) {
+    return NextResponse.json({ error: activityError.message }, { status: 400 })
+  }
+
+  const grouped = new Map<string, any>()
+
+  for (const row of data || []) {
+    const clientId = clean(row.client_user_id || row.user_email || "unknown")
+    const existing = grouped.get(clientId) || {
+      clientId,
+      searchCount: 0,
+      datasheets: [],
+      lastActivityAt: null,
     }
 
-    return NextResponse.json({ clients: data || [] })
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || "Unable to load clients" },
-      { status: 500 }
-    )
+    if (!existing.lastActivityAt || new Date(row.created_at) > new Date(existing.lastActivityAt)) {
+      existing.lastActivityAt = row.created_at
+    }
+
+    if (row.event_type === "search") {
+      existing.searchCount += 1
+    }
+
+    if (row.event_type === "datasheet") {
+      existing.datasheets.push(row)
+    }
+
+    grouped.set(clientId, existing)
   }
+
+  return NextResponse.json({ clientActivity: Array.from(grouped.values()) })
 }
 
 export async function POST(request: Request) {
+  const { profile, error } = await requireAdmin(request)
+  if (error) return error
+
   try {
-    const supabase = createUserSupabaseClient(request)
     const body = await request.json()
 
-    if (body.action !== "update_client_access") {
+    if (body.action !== "update_follow_up") {
       return NextResponse.json({ error: "Unknown action" }, { status: 400 })
     }
 
-    const id = String(body.id || "").trim()
+    const activityId = clean(body.activityId)
 
-    if (!id) {
-      return NextResponse.json({ error: "Missing client id" }, { status: 400 })
+    if (!activityId) {
+      return NextResponse.json({ error: "Missing activity id" }, { status: 400 })
     }
 
-    const discount = Number(body.distributorDiscountPercent || 0)
+    const followedUp = Boolean(body.followedUp)
 
-    const { data, error } = await supabase.rpc("admin_update_client_access", {
-      client_id: id,
-      new_can_view_prices: Boolean(body.canViewPrices),
-      new_is_distributor: Boolean(body.isDistributor),
-      new_distributor_discount_percent: Number.isFinite(discount) ? discount : 0,
-    })
+    const { data, error: updateError } = await supabaseAdmin
+      .from("prism_client_activity")
+      .update({
+        followed_up: followedUp,
+        followed_up_at: followedUp ? new Date().toISOString() : null,
+        followed_up_by: followedUp ? profile?.email || null : null,
+      })
+      .eq("id", activityId)
+      .select("*")
+      .single()
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 })
+    if (updateError) {
+      return NextResponse.json({ error: updateError.message }, { status: 400 })
     }
 
-    return NextResponse.json({ client: data?.[0] || null })
+    return NextResponse.json({ activity: data })
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Unable to update client" },
+      { error: error.message || "Unable to update client activity" },
       { status: 500 }
     )
   }
