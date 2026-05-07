@@ -77,12 +77,19 @@ function mergeClientsWithActivity(
   clients: ClientUser[],
   activitySummaries: ClientActivitySummary[]
 ) {
-  const byClientId = new Map(
-    activitySummaries.map((summary) => [String(summary.clientId), summary])
-  )
+  const byClientId = new Map<string, ClientActivitySummary>()
+
+  activitySummaries.forEach((summary) => {
+    byClientId.set(String(summary.clientId), summary)
+
+    const firstDatasheet = summary.datasheets?.[0]
+    const email = String(firstDatasheet?.user_email || "").toLowerCase().trim()
+    if (email) byClientId.set(email, summary)
+  })
 
   return clients.map((client) => {
-    const summary = byClientId.get(String(client.id))
+    const emailKey = String(client.email || "").toLowerCase().trim()
+    const summary = byClientId.get(String(client.id)) || byClientId.get(emailKey)
 
     return {
       ...client,
@@ -126,38 +133,46 @@ export default function AdminClientsPage() {
       return
     }
 
-    const [clientsResponse, activityResponse] = await Promise.all([
-      fetch("/api/admin/clients", {
-        headers: {
-          authorization: `Bearer ${token}`,
-        },
-      }),
-      fetch("/api/admin/client-activity", {
-        headers: {
-          authorization: `Bearer ${token}`,
-        },
-      }),
-    ])
+    const clientsResponse = await fetch("/api/admin/clients", {
+      headers: {
+        authorization: `Bearer ${token}`,
+      },
+    })
 
-    const result = await clientsResponse.json()
-    const activityResult = await activityResponse.json().catch(() => ({ clientActivity: [] }))
-    setLoading(false)
+    const result = await clientsResponse.json().catch(() => ({}))
 
     if (!clientsResponse.ok) {
+      setLoading(false)
       setMessage(result.error || "Unable to load clients")
       return
     }
 
-    if (!activityResponse.ok) {
-      setMessage(activityResult.error || "Clients loaded, but PRISM activity could not be loaded")
+    let activitySummaries: ClientActivitySummary[] = []
+
+    try {
+      const activityResponse = await fetch("/api/admin/client-activity", {
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+      })
+
+      const activityResult = await activityResponse.json().catch(() => ({ clientActivity: [] }))
+
+      if (activityResponse.ok) {
+        activitySummaries = activityResult.clientActivity || []
+
+        if (activityResult.activityUnavailable || activityResult.warning) {
+          setMessage(activityResult.warning || "Clients loaded. PRISM activity tracking is not available yet.")
+        }
+      } else {
+        setMessage(activityResult.error || "Clients loaded. PRISM activity could not be loaded.")
+      }
+    } catch {
+      setMessage("Clients loaded. PRISM activity could not be loaded.")
     }
 
-    setClients(
-      mergeClientsWithActivity(
-        result.clients || [],
-        activityResponse.ok ? activityResult.clientActivity || [] : []
-      )
-    )
+    setClients(mergeClientsWithActivity(result.clients || [], activitySummaries))
+    setLoading(false)
   }
 
   async function updateClientAccess(updatedClient: ClientUser) {
