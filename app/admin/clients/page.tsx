@@ -7,6 +7,9 @@ import { supabase } from "@/app/lib/supabase"
 type ClientDatasheetActivity = {
   id: string
   created_at: string
+  user_email?: string | null
+  client_user_id?: string | null
+  event_type?: string | null
   selected_fluid?: string | null
   product_code?: string | null
   product_model?: string | null
