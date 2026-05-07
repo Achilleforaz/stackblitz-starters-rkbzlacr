@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import type { ReactNode } from "react"
 import {
   filterConfigurations,
+  getPrismConfigurations,
   PrismConfiguration,
   uniqueValues,
 } from "../lib/prism-config-data"
@@ -403,7 +404,12 @@ export default function PrismPage() {
     })
 
     if (!response.ok) {
-      setConfigurations([])
+      const fallbackProducts = await getPrismConfigurations().catch(() => [])
+      setConfigurations(fallbackProducts)
+      setDistributorDiscounts({})
+      setCatalogCanViewPrices(false)
+      setCatalogIsDistributor(false)
+      setCatalogIsAdmin(false)
       setLoading(false)
       return
     }
