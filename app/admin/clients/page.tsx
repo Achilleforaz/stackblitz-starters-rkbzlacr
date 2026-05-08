@@ -25,6 +25,7 @@ type ClientDatasheetActivity = {
 
 type ClientActivitySummary = {
   clientId: string
+  userEmail?: string | null
   searchCount: number
   datasheets: ClientDatasheetActivity[]
   lastActivityAt?: string | null
@@ -86,7 +87,7 @@ function mergeClientsWithActivity(
     byClientId.set(String(summary.clientId), summary)
 
     const firstDatasheet = summary.datasheets?.[0]
-    const email = String(firstDatasheet?.user_email || "").toLowerCase().trim()
+    const email = String(summary.userEmail || firstDatasheet?.user_email || "").toLowerCase().trim()
     if (email) byClientId.set(email, summary)
   })
 
