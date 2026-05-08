@@ -24,6 +24,11 @@ type ClientDatasheetActivity = {
   followed_up?: boolean
   followed_up_at?: string | null
   followed_up_by?: string | null
+  admin_note?: string | null
+  follow_up_status?: string | null
+  activity_context?: string | null
+  created_by_role?: string | null
+  created_by_admin_email?: string | null
 }
 
 type ClientActivitySummary = {
@@ -71,6 +76,41 @@ function safeValue(value: unknown, fallback = "-") {
 
 function formatClientName(client: ClientUser) {
   return [client.first_name, client.last_name].filter(Boolean).join(" ").trim() || "Client"
+}
+
+const followUpStatusOptions = [
+  { value: "to_review", label: "To review" },
+  { value: "quote_to_send", label: "Quote to send" },
+  { value: "waiting_client_feedback", label: "Waiting client feedback" },
+  { value: "followed_up", label: "Followed up" },
+  { value: "closed", label: "Closed" },
+]
+
+function getFollowUpStatusLabel(value?: string | null) {
+  return (
+    followUpStatusOptions.find((option) => option.value === value)?.label ||
+    "To review"
+  )
+}
+
+function getFollowUpStatusClass(value?: string | null) {
+  if (value === "closed") {
+    return "border-slate-300 bg-slate-100 text-slate-700"
+  }
+
+  if (value === "followed_up") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-800"
+  }
+
+  if (value === "quote_to_send") {
+    return "border-blue-200 bg-blue-50 text-blue-800"
+  }
+
+  if (value === "waiting_client_feedback") {
+    return "border-amber-200 bg-amber-50 text-amber-800"
+  }
+
+  return "border-violet-200 bg-violet-50 text-violet-800"
 }
 
 function formatCondition(condition: Record<string, any>) {
@@ -259,8 +299,24 @@ function downloadClientDatasheetPdf(client: ClientUser, datasheet: ClientDatashe
   section("Commercial tracking")
   keyValue("Viewed date", formatDateTime(datasheet.created_at), margin, y, cardW)
   keyValue("Datasheet", datasheet.pdf_downloaded ? "Downloaded" : "Viewed only", margin + cardW + 3, y, cardW)
-  keyValue("Follow-up", datasheet.followed_up ? "Done" : "To do", margin + (cardW + 3) * 2, y, cardW)
+  keyValue("Follow-up", getFollowUpStatusLabel(datasheet.follow_up_status), margin + (cardW + 3) * 2, y, cardW)
   keyValue("Follow-up by", datasheet.followed_up_by || "-", margin + (cardW + 3) * 3, y, cardW)
+  y += 24
+
+  const note = clean(datasheet.admin_note)
+  if (note) {
+    section("Internal admin note")
+    doc.setDrawColor(225, 228, 235)
+    doc.setFillColor(248, 249, 252)
+    const noteLines = doc.splitTextToSize(note, contentWidth - 8)
+    const noteHeight = Math.max(20, noteLines.length * 5 + 10)
+    ensureSpace(noteHeight + 4)
+    doc.roundedRect(margin, y, contentWidth, noteHeight, 2, 2, "FD")
+    doc.setFont("helvetica", "normal")
+    doc.setFontSize(8)
+    doc.setTextColor(40, 45, 60)
+    doc.text(noteLines, margin + 4, y + 7)
+  }
 
   const safeCode = safeValue(datasheet.product_code || datasheet.product_model, "prism-datasheet")
     .replace(/[^a-z0-9-_]+/gi, "-")
@@ -282,6 +338,8 @@ export default function AdminClientsPage() {
     client: ClientUser
     datasheet: ClientDatasheetActivity
   } | null>(null)
+  const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({})
+  const [statusDrafts, setStatusDrafts] = useState<Record<string, string>>({})
 
   useEffect(() => {
     loadClients()
@@ -394,7 +452,30 @@ export default function AdminClientsPage() {
     )
   }
 
-  async function updateDatasheetFollowUp(activityId: string, followedUp: boolean) {
+  function applyActivityUpdate(updatedActivity: ClientDatasheetActivity) {
+    setClients((current) =>
+      current.map((client) => ({
+        ...client,
+        datasheets: (client.datasheets || []).map((datasheet) =>
+          datasheet.id === updatedActivity.id ? updatedActivity : datasheet
+        ),
+      }))
+    )
+
+    setSelectedDatasheet((current) => {
+      if (!current || current.datasheet.id !== updatedActivity.id) return current
+      return { ...current, datasheet: updatedActivity }
+    })
+  }
+
+  async function updateDatasheetCommercialTracking(
+    activityId: string,
+    patch: {
+      followedUp?: boolean
+      followUpStatus?: string
+      adminNote?: string
+    }
+  ) {
     setMessage("")
     setMessageType("info")
     setSavingActivityId(activityId)
@@ -413,33 +494,35 @@ export default function AdminClientsPage() {
         authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
-        action: "update_follow_up",
+        action: "update_commercial_tracking",
         activityId,
-        followedUp,
+        ...patch,
       }),
     })
 
-    const result = await response.json()
+    const result = await response.json().catch(() => ({}))
     setSavingActivityId(null)
 
     if (!response.ok) {
       setMessageType("error")
-      setMessage(result.error || "Unable to update follow-up status")
+      setMessage(result.error || "Unable to update commercial tracking")
       return
     }
 
-    setClients((current) =>
-      current.map((client) => ({
-        ...client,
-        datasheets: (client.datasheets || []).map((datasheet) =>
-          datasheet.id === result.activity.id ? result.activity : datasheet
-        ),
-      }))
-    )
+    applyActivityUpdate(result.activity)
+  }
 
-    setSelectedDatasheet((current) => {
-      if (!current || current.datasheet.id !== result.activity.id) return current
-      return { ...current, datasheet: result.activity }
+  async function updateDatasheetFollowUp(activityId: string, followedUp: boolean) {
+    await updateDatasheetCommercialTracking(activityId, {
+      followedUp,
+      followUpStatus: followedUp ? "followed_up" : "to_review",
+    })
+  }
+
+  async function saveDatasheetNote(activityId: string) {
+    await updateDatasheetCommercialTracking(activityId, {
+      adminNote: noteDrafts[activityId] || "",
+      followUpStatus: statusDrafts[activityId],
     })
   }
 
@@ -678,12 +761,37 @@ export default function AdminClientsPage() {
                                               <p className="mt-1 text-xs text-gray-400">
                                                 DN {product.dn || "-"} · MWP {product.mwp || "-"} · Port {product.port || "-"} · Setting {product.setting || "-"}
                                               </p>
+                                              <div className="mt-2 flex flex-wrap gap-2">
+                                                <span className={`rounded-full border px-2.5 py-1 text-[11px] font-black ${getFollowUpStatusClass(datasheet.follow_up_status)}`}>
+                                                  {getFollowUpStatusLabel(datasheet.follow_up_status)}
+                                                </span>
+                                                {datasheet.created_by_role === "admin" && (
+                                                  <span className="rounded-full border border-violet-300/40 bg-violet-500/15 px-2.5 py-1 text-[11px] font-black text-violet-100">
+                                                    Admin assisted
+                                                  </span>
+                                                )}
+                                              </div>
+                                              {datasheet.admin_note && (
+                                                <p className="mt-2 max-w-2xl rounded-xl border border-white/10 bg-white/[0.04] p-2 text-xs font-semibold text-white/60">
+                                                  Note: {datasheet.admin_note}
+                                                </p>
+                                              )}
                                             </div>
 
                                             <div className="flex flex-wrap items-center justify-end gap-2">
                                               <button
                                                 type="button"
-                                                onClick={() => setSelectedDatasheet({ client, datasheet })}
+                                                onClick={() => {
+                                                  setNoteDrafts((current) => ({
+                                                    ...current,
+                                                    [datasheet.id]: current[datasheet.id] ?? datasheet.admin_note ?? "",
+                                                  }))
+                                                  setStatusDrafts((current) => ({
+                                                    ...current,
+                                                    [datasheet.id]: current[datasheet.id] ?? datasheet.follow_up_status ?? "to_review",
+                                                  }))
+                                                  setSelectedDatasheet({ client, datasheet })
+                                                }}
                                                 className="rounded-full border border-[#8b5cf6]/45 bg-[#8b5cf6]/14 px-3 py-1 text-xs font-black text-violet-100 transition hover:bg-[#8b5cf6]/24"
                                               >
                                                 See datasheet
@@ -910,29 +1018,94 @@ export default function AdminClientsPage() {
                     </div>
 
                     <div className="mt-5 rounded-2xl border border-[#d9deed] bg-white p-4 shadow-sm">
-                      <h5 className="text-sm font-black uppercase tracking-[0.18em] text-[#334155]">
-                        Commercial follow-up
-                      </h5>
-                      <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
-                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 font-bold text-emerald-800">
-                          {datasheet.pdf_downloaded ? "PDF downloaded" : "Viewed only"}
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h5 className="text-sm font-black uppercase tracking-[0.18em] text-[#334155]">
+                            Commercial follow-up
+                          </h5>
+                          <p className="mt-1 text-xs font-semibold text-slate-500">
+                            Internal note and status are only visible in the admin panel.
+                          </p>
+                        </div>
+                        <span className={`rounded-full border px-3 py-2 text-sm font-black ${getFollowUpStatusClass(datasheet.follow_up_status)}`}>
+                          {getFollowUpStatusLabel(datasheet.follow_up_status)}
                         </span>
-                        <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#d9deed] bg-[#f8fafc] px-3 py-2 font-bold text-slate-700">
-                          <input
-                            type="checkbox"
-                            checked={Boolean(datasheet.followed_up)}
-                            disabled={savingActivityId === datasheet.id}
-                            onChange={(event) => updateDatasheetFollowUp(datasheet.id, event.target.checked)}
-                            className="h-4 w-4 accent-[#4500E8]"
+                      </div>
+
+                      <div className="mt-4 grid gap-3 md:grid-cols-[220px_1fr]">
+                        <div className="space-y-3">
+                          <label className="block text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                            Follow-up status
+                          </label>
+                          <select
+                            value={statusDrafts[datasheet.id] ?? datasheet.follow_up_status ?? "to_review"}
+                            onChange={(event) =>
+                              setStatusDrafts((current) => ({
+                                ...current,
+                                [datasheet.id]: event.target.value,
+                              }))
+                            }
+                            className="w-full rounded-xl border border-[#d9deed] bg-[#f8fafc] px-3 py-2 text-sm font-bold text-slate-800 outline-none focus:border-[#4500E8]"
+                          >
+                            {followUpStatusOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+
+                          <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#d9deed] bg-[#f8fafc] px-3 py-2 text-sm font-bold text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(datasheet.followed_up)}
+                              disabled={savingActivityId === datasheet.id}
+                              onChange={(event) => updateDatasheetFollowUp(datasheet.id, event.target.checked)}
+                              className="h-4 w-4 accent-[#4500E8]"
+                            />
+                            Followed up
+                          </label>
+
+                          <div className="text-xs font-semibold text-slate-500">
+                            <p>{datasheet.pdf_downloaded ? "PDF downloaded" : "Viewed only"}</p>
+                            {datasheet.followed_up && (
+                              <p className="mt-1 text-emerald-700">
+                                Recorded {formatDateTime(datasheet.followed_up_at)}
+                                {datasheet.followed_up_by ? ` by ${datasheet.followed_up_by}` : ""}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                            Internal admin note
+                          </label>
+                          <textarea
+                            value={noteDrafts[datasheet.id] ?? datasheet.admin_note ?? ""}
+                            onChange={(event) =>
+                              setNoteDrafts((current) => ({
+                                ...current,
+                                [datasheet.id]: event.target.value,
+                              }))
+                            }
+                            rows={5}
+                            placeholder="Example: client wants stainless steel version, send quote next week, check hydrogen compatibility..."
+                            className="mt-2 w-full resize-none rounded-2xl border border-[#d9deed] bg-[#f8fafc] px-3 py-3 text-sm font-semibold text-slate-800 outline-none placeholder:text-slate-400 focus:border-[#4500E8]"
                           />
-                          Followed up
-                        </label>
-                        {datasheet.followed_up && (
-                          <span className="text-sm font-semibold text-emerald-700">
-                            Recorded {formatDateTime(datasheet.followed_up_at)}
-                            {datasheet.followed_up_by ? ` by ${datasheet.followed_up_by}` : ""}
-                          </span>
-                        )}
+                          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                            <p className="text-xs font-semibold text-slate-500">
+                              Use this for meeting notes, pricing context, quote actions, or technical doubts.
+                            </p>
+                            <button
+                              type="button"
+                              disabled={savingActivityId === datasheet.id}
+                              onClick={() => saveDatasheetNote(datasheet.id)}
+                              className="rounded-full border border-[#4500E8]/30 bg-[#4500E8] px-4 py-2 text-sm font-black text-white transition hover:bg-[#3700b8] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {savingActivityId === datasheet.id ? "Saving..." : "Save follow-up"}
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
