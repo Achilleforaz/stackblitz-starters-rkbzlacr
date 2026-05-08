@@ -707,7 +707,7 @@ export default function PrismPage() {
     product?: PrismConfiguration | null,
     pdfDownloaded = false
   ) {
-    if (!clientProfile?.id || adminProfile) return
+    if (adminProfile) return
 
     const token = await getAccessToken()
     if (!token) return
@@ -744,14 +744,14 @@ export default function PrismPage() {
   }
 
   useEffect(() => {
-    if (!sizingApplied || !selectedConfiguration || !clientProfile?.id || adminProfile) return
+    if (!sizingApplied || !selectedConfiguration || adminProfile) return
 
     const signature = buildActivitySignature(selectedConfiguration, false)
     if (lastLoggedDatasheetSignatureRef.current === signature) return
 
     lastLoggedDatasheetSignatureRef.current = signature
     void logPrismActivity("datasheet", selectedConfiguration, false)
-  }, [sizingApplied, selectedConfiguration, clientProfile?.id, adminProfile, selectedFluid, selectedFluidId, conditions, sizingSummary, filteredConfigurations.length])
+  }, [sizingApplied, selectedConfiguration, adminProfile, selectedFluid, selectedFluidId, conditions, sizingSummary, filteredConfigurations.length])
 
   function updateCondition(index: number, field: keyof Condition, value: number) {
     const updated = [...conditions]
