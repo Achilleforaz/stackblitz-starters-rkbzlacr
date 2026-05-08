@@ -2,12 +2,15 @@
 
 import { Fragment, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
+import jsPDF from "jspdf"
 import { supabase } from "@/app/lib/supabase"
 
 type ClientDatasheetActivity = {
   id: string
   created_at: string
   user_email?: string | null
+  user_name?: string | null
+  company?: string | null
   client_user_id?: string | null
   event_type?: string | null
   selected_fluid?: string | null
@@ -27,7 +30,6 @@ type ClientActivitySummary = {
   clientId: string
   searchCount: number
   datasheets: ClientDatasheetActivity[]
-  activities?: ClientDatasheetActivity[]
   lastActivityAt?: string | null
 }
 
@@ -45,7 +47,6 @@ type ClientUser = {
   search_count?: number
   last_activity_at?: string | null
   datasheets?: ClientDatasheetActivity[]
-  activities?: ClientDatasheetActivity[]
 }
 
 function formatDateTime(value?: string | null) {
@@ -63,12 +64,21 @@ function formatNumber(value: unknown, suffix = "") {
   return `${Math.round(numeric * 10) / 10}${suffix}`
 }
 
+function safeValue(value: unknown, fallback = "-") {
+  if (value === null || value === undefined || value === "") return fallback
+  return String(value)
+}
+
+function formatClientName(client: ClientUser) {
+  return [client.first_name, client.last_name].filter(Boolean).join(" ").trim() || "Client"
+}
+
 function formatCondition(condition: Record<string, any>) {
   const id = condition.id ? `C${condition.id}` : "Condition"
   const inlet = formatNumber(condition.inletPressure, " bar")
   const outlet = formatNumber(condition.outletPressure, " bar")
   const flow = condition.flowNm3h
-    ? formatNumber(condition.flowNm3h, " Nm³/h")
+    ? formatNumber(condition.flowNm3h, " Nm3/h")
     : formatNumber(condition.flowRateGs, " g/s")
   const temperature = formatNumber(condition.temperature, " °C")
   const utilization = condition.utilizationPercent
@@ -76,55 +86,6 @@ function formatCondition(condition: Record<string, any>) {
     : ""
 
   return `${id}: ${inlet} → ${outlet} · ${flow} · ${temperature}${utilization}`
-}
-
-function getActivityTitle(activity: ClientDatasheetActivity) {
-  if (activity.event_type === "search") return "Sizing search"
-  if (activity.pdf_downloaded) return "Datasheet downloaded"
-  return "Datasheet viewed"
-}
-
-function getActivitySearchText(activity: ClientDatasheetActivity) {
-  const product = activity.product_snapshot || {}
-  return [
-    activity.event_type,
-    activity.product_code,
-    activity.product_model,
-    activity.selected_fluid,
-    product.model,
-    product.code,
-    product.newCode,
-    product.dn,
-    product.mwp,
-    product.port,
-    product.setting,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase()
-}
-
-function filterClientActivities(
-  activities: ClientDatasheetActivity[],
-  filter: string,
-  search: string
-) {
-  const normalizedSearch = search.toLowerCase().trim()
-
-  return activities.filter((activity) => {
-    const matchesFilter =
-      filter === "all" ||
-      (filter === "search" && activity.event_type === "search") ||
-      (filter === "datasheet" && activity.event_type === "datasheet") ||
-      (filter === "downloaded" && Boolean(activity.pdf_downloaded)) ||
-      (filter === "to_follow" && activity.event_type === "datasheet" && !activity.followed_up) ||
-      (filter === "followed" && activity.event_type === "datasheet" && Boolean(activity.followed_up))
-
-    if (!matchesFilter) return false
-    if (!normalizedSearch) return true
-
-    return getActivitySearchText(activity).includes(normalizedSearch)
-  })
 }
 
 function mergeClientsWithActivity(
@@ -150,9 +111,161 @@ function mergeClientsWithActivity(
       search_count: summary?.searchCount || 0,
       last_activity_at: summary?.lastActivityAt || null,
       datasheets: summary?.datasheets || [],
-      activities: summary?.activities || summary?.datasheets || [],
     }
   })
+}
+
+function downloadClientDatasheetPdf(client: ClientUser, datasheet: ClientDatasheetActivity) {
+  const doc = new jsPDF("p", "mm", "a4")
+  const margin = 14
+  const pageWidth = 210
+  const pageHeight = 297
+  const contentWidth = pageWidth - margin * 2
+  let y = margin
+
+  const product = datasheet.product_snapshot || {}
+  const conditions = Array.isArray(datasheet.conditions) ? datasheet.conditions : []
+  const summary = datasheet.sizing_summary || {}
+
+  const ensureSpace = (height: number) => {
+    if (y + height > pageHeight - margin) {
+      doc.addPage()
+      y = margin
+    }
+  }
+
+  const section = (title: string) => {
+    ensureSpace(12)
+    doc.setDrawColor(80, 50, 180)
+    doc.setLineWidth(1.4)
+    doc.line(margin, y + 2, margin + 3, y + 2)
+    doc.setTextColor(22, 24, 45)
+    doc.setFont("helvetica", "bold")
+    doc.setFontSize(10)
+    doc.text(title.toUpperCase(), margin + 6, y + 3)
+    y += 9
+  }
+
+  const keyValue = (label: string, value: unknown, x: number, top: number, width: number) => {
+    doc.setDrawColor(225, 228, 235)
+    doc.setFillColor(248, 249, 252)
+    doc.roundedRect(x, top, width, 16, 2, 2, "FD")
+    doc.setFont("helvetica", "normal")
+    doc.setFontSize(7)
+    doc.setTextColor(105, 113, 132)
+    doc.text(label, x + 3, top + 5)
+    doc.setFont("helvetica", "bold")
+    doc.setFontSize(8)
+    doc.setTextColor(25, 30, 45)
+    doc.text(doc.splitTextToSize(safeValue(value), width - 6), x + 3, top + 11)
+  }
+
+  doc.setFillColor(248, 249, 252)
+  doc.rect(0, 0, pageWidth, pageHeight, "F")
+
+  doc.setFillColor(255, 255, 255)
+  doc.setDrawColor(214, 218, 230)
+  doc.roundedRect(margin, y, contentWidth, 35, 3, 3, "FD")
+  doc.setDrawColor(80, 50, 180)
+  doc.setLineWidth(2)
+  doc.line(margin, y, margin, y + 35)
+
+  doc.setFont("helvetica", "bold")
+  doc.setFontSize(15)
+  doc.setTextColor(22, 24, 45)
+  doc.text("PRISM CLIENT DATASHEET", margin + 7, y + 11)
+  doc.setFontSize(8)
+  doc.setTextColor(95, 102, 120)
+  doc.text("Admin copy with client details and recorded working conditions", margin + 7, y + 17)
+  doc.setFont("helvetica", "bold")
+  doc.setTextColor(35, 38, 70)
+  doc.text(safeValue(datasheet.product_code, "Product not recorded"), margin + 7, y + 25)
+  doc.setTextColor(80, 50, 180)
+  doc.text(`MODEL ${safeValue(datasheet.product_model || product.model)}`, pageWidth - margin - 35, y + 15)
+  y += 44
+
+  section("Client information")
+  const col = (contentWidth - 6) / 3
+  keyValue("Name", formatClientName(client), margin, y, col)
+  keyValue("Company", client.company, margin + col + 3, y, col)
+  keyValue("Email", client.email, margin + (col + 3) * 2, y, col)
+  y += 22
+
+  section("Product and sizing summary")
+  const cardW = (contentWidth - 9) / 4
+  keyValue("Fluid", datasheet.selected_fluid, margin, y, cardW)
+  keyValue("DN", product.dn, margin + cardW + 3, y, cardW)
+  keyValue("MWP", product.mwp, margin + (cardW + 3) * 2, y, cardW)
+  keyValue("Port", product.port, margin + (cardW + 3) * 3, y, cardW)
+  y += 20
+  keyValue("Setting", product.setting || summary.setting, margin, y, cardW)
+  keyValue("Regulation", product.regulation || summary.regulation, margin + cardW + 3, y, cardW)
+  keyValue("Required seat", summary.requiredSeat || summary.seatRequired || product.seat, margin + (cardW + 3) * 2, y, cardW)
+  keyValue("PDF status", datasheet.pdf_downloaded ? "Downloaded" : "Viewed only", margin + (cardW + 3) * 3, y, cardW)
+  y += 24
+
+  section("Application working conditions")
+  if (conditions.length === 0) {
+    doc.setFont("helvetica", "normal")
+    doc.setFontSize(9)
+    doc.setTextColor(95, 102, 120)
+    doc.text("No working condition recorded.", margin, y)
+    y += 8
+  } else {
+    const rowH = 10
+    const cols = [22, 32, 32, 32, 32, 30]
+    const headers = ["Cond.", "Inlet", "Outlet", "Flow", "Temp.", "Util."]
+    ensureSpace(rowH * (conditions.length + 1) + 8)
+    doc.setFillColor(235, 238, 246)
+    doc.rect(margin, y, contentWidth, rowH, "F")
+    doc.setFont("helvetica", "bold")
+    doc.setFontSize(7)
+    doc.setTextColor(35, 38, 70)
+    let x = margin + 2
+    headers.forEach((header, index) => {
+      doc.text(header, x, y + 6)
+      x += cols[index]
+    })
+    y += rowH
+
+    doc.setFont("helvetica", "normal")
+    doc.setTextColor(40, 45, 60)
+    conditions.forEach((condition, index) => {
+      ensureSpace(rowH + 5)
+      if (index % 2 === 0) {
+        doc.setFillColor(250, 251, 253)
+        doc.rect(margin, y, contentWidth, rowH, "F")
+      }
+      x = margin + 2
+      const values = [
+        `C${condition.id || index + 1}`,
+        formatNumber(condition.inletPressure, " bar"),
+        formatNumber(condition.outletPressure, " bar"),
+        condition.flowNm3h
+          ? formatNumber(condition.flowNm3h, " Nm3/h")
+          : formatNumber(condition.flowRateGs, " g/s"),
+        formatNumber(condition.temperature, " C"),
+        condition.utilizationPercent ? formatNumber(condition.utilizationPercent, "%") : "-",
+      ]
+      values.forEach((value, valueIndex) => {
+        doc.text(value, x, y + 6)
+        x += cols[valueIndex]
+      })
+      y += rowH
+    })
+    y += 6
+  }
+
+  section("Commercial tracking")
+  keyValue("Viewed date", formatDateTime(datasheet.created_at), margin, y, cardW)
+  keyValue("Datasheet", datasheet.pdf_downloaded ? "Downloaded" : "Viewed only", margin + cardW + 3, y, cardW)
+  keyValue("Follow-up", datasheet.followed_up ? "Done" : "To do", margin + (cardW + 3) * 2, y, cardW)
+  keyValue("Follow-up by", datasheet.followed_up_by || "-", margin + (cardW + 3) * 3, y, cardW)
+
+  const safeCode = safeValue(datasheet.product_code || datasheet.product_model, "prism-datasheet")
+    .replace(/[^a-z0-9-_]+/gi, "-")
+    .toLowerCase()
+  doc.save(`${safeCode}-${client.email || "client"}.pdf`)
 }
 
 export default function AdminClientsPage() {
@@ -165,9 +278,10 @@ export default function AdminClientsPage() {
   const [savingId, setSavingId] = useState<string | null>(null)
   const [savingActivityId, setSavingActivityId] = useState<string | null>(null)
   const [expandedClientId, setExpandedClientId] = useState<string | null>(null)
-  const [activityVisibleCounts, setActivityVisibleCounts] = useState<Record<string, number>>({})
-  const [activityFilter, setActivityFilter] = useState("all")
-  const [activitySearch, setActivitySearch] = useState("")
+  const [selectedDatasheet, setSelectedDatasheet] = useState<{
+    client: ClientUser
+    datasheet: ClientDatasheetActivity
+  } | null>(null)
 
   useEffect(() => {
     loadClients()
@@ -275,7 +389,6 @@ export default function AdminClientsPage() {
           search_count: item.search_count,
           last_activity_at: item.last_activity_at,
           datasheets: item.datasheets,
-          activities: item.activities,
         }
       })
     )
@@ -321,11 +434,13 @@ export default function AdminClientsPage() {
         datasheets: (client.datasheets || []).map((datasheet) =>
           datasheet.id === result.activity.id ? result.activity : datasheet
         ),
-        activities: (client.activities || []).map((activity) =>
-          activity.id === result.activity.id ? result.activity : activity
-        ),
       }))
     )
+
+    setSelectedDatasheet((current) => {
+      if (!current || current.datasheet.id !== result.activity.id) return current
+      return { ...current, datasheet: result.activity }
+    })
   }
 
   function togglePriceAccess(client: ClientUser) {
@@ -345,24 +460,6 @@ export default function AdminClientsPage() {
 
   function toggleClientDetails(clientId: string) {
     setExpandedClientId((current) => (current === clientId ? null : clientId))
-    setActivityVisibleCounts((current) => ({
-      ...current,
-      [clientId]: current[clientId] || 10,
-    }))
-  }
-
-  function showMoreActivities(clientId: string) {
-    setActivityVisibleCounts((current) => ({
-      ...current,
-      [clientId]: (current[clientId] || 10) + 10,
-    }))
-  }
-
-  function showAllActivities(clientId: string, total: number) {
-    setActivityVisibleCounts((current) => ({
-      ...current,
-      [clientId]: total,
-    }))
   }
 
   async function logout() {
@@ -429,7 +526,7 @@ export default function AdminClientsPage() {
             <div>
               <h2 className="text-2xl font-black">Clients</h2>
               <p className="mt-1 text-sm text-gray-300">
-                Search count is displayed by default. Click a client to view datasheets, working conditions, viewed products, PDF download status, and follow-up status.
+                Click a client to open a scrollable activity history, view datasheets in a modal, download admin copies, and track follow-up.
               </p>
             </div>
 
@@ -536,194 +633,136 @@ export default function AdminClientsPage() {
                           </td>
                         </tr>
 
-                        {isExpanded && (() => {
-                          const activities = client.activities || []
-                          const filteredActivities = filterClientActivities(
-                            activities,
-                            activityFilter,
-                            activitySearch
-                          )
-                          const visibleCount = activityVisibleCounts[client.id] || 10
-                          const visibleActivities = filteredActivities.slice(0, visibleCount)
-                          const remainingCount = Math.max(filteredActivities.length - visibleActivities.length, 0)
-
-                          return (
-                            <tr key={`${client.id}-details`} className="border-t border-white/10 bg-white/[0.035]">
-                              <td colSpan={8} className="p-4">
-                                <div className="rounded-2xl border border-white/10 bg-[#10112b]/80 p-4">
-                                  <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-                                    <div>
-                                      <h3 className="text-lg font-black">PRISM client activity</h3>
-                                      <p className="mt-1 max-w-3xl text-xs text-gray-300">
-                                        All searches are available in a scrollable timeline. The panel opens on the latest 10 events to stay readable; use Load more or Show all to inspect the complete client history.
-                                      </p>
-                                    </div>
-                                    <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-black text-white/70">
-                                      {client.search_count || 0} searches · {datasheets.length} datasheets · {activities.length} total events
-                                    </span>
+                        {isExpanded && (
+                          <tr key={`${client.id}-details`} className="border-t border-white/10 bg-white/[0.035]">
+                            <td colSpan={8} className="p-4">
+                              <div className="rounded-2xl border border-white/10 bg-[#10112b]/80 p-4">
+                                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                                  <div>
+                                    <h3 className="text-lg font-black">PRISM client activity</h3>
+                                    <p className="mt-1 text-xs text-gray-300">
+                                      Scrollable history. Each line can be opened without expanding the page.
+                                    </p>
                                   </div>
+                                  <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-black text-white/70">
+                                    {client.search_count || 0} searches · {datasheets.length} datasheets
+                                  </span>
+                                </div>
 
-                                  <div className="mb-4 grid gap-3 rounded-2xl border border-white/10 bg-black/15 p-3 lg:grid-cols-[1fr_210px]">
-                                    <input
-                                      type="search"
-                                      value={activitySearch}
-                                      onChange={(event) => setActivitySearch(event.target.value)}
-                                      placeholder="Search product, model, fluid, DN, port..."
-                                      className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm font-semibold text-white placeholder:text-white/35 outline-none focus:border-[#8b5cf6]"
-                                    />
-                                    <select
-                                      value={activityFilter}
-                                      onChange={(event) => setActivityFilter(event.target.value)}
-                                      className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm font-bold text-white outline-none focus:border-[#8b5cf6]"
-                                    >
-                                      <option value="all">All activity</option>
-                                      <option value="search">Searches only</option>
-                                      <option value="datasheet">Datasheets only</option>
-                                      <option value="downloaded">PDF downloaded</option>
-                                      <option value="to_follow">To follow up</option>
-                                      <option value="followed">Followed up</option>
-                                    </select>
-                                  </div>
+                                {datasheets.length === 0 ? (
+                                  <p className="text-sm text-gray-300">No datasheet viewed yet.</p>
+                                ) : (
+                                  <div className="max-h-[560px] space-y-3 overflow-y-auto pr-2">
+                                    {datasheets.map((datasheet) => {
+                                      const conditions = Array.isArray(datasheet.conditions)
+                                        ? datasheet.conditions
+                                        : []
+                                      const product = datasheet.product_snapshot || {}
 
-                                  {activities.length === 0 ? (
-                                    <p className="text-sm text-gray-300">No PRISM activity recorded yet.</p>
-                                  ) : filteredActivities.length === 0 ? (
-                                    <p className="text-sm text-gray-300">No activity matches this filter.</p>
-                                  ) : (
-                                    <>
-                                      <div className="max-h-[720px] overflow-y-auto pr-2">
-                                        <div className="sticky top-0 z-10 mb-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/10 bg-[#10112b]/95 p-3 backdrop-blur">
-                                          <p className="text-xs font-black uppercase tracking-[0.18em] text-white/45">
-                                            Showing {visibleActivities.length} / {filteredActivities.length} events
-                                          </p>
-                                          <div className="flex flex-wrap gap-2">
-                                            {remainingCount > 0 && (
+                                      return (
+                                        <div
+                                          key={datasheet.id}
+                                          className="rounded-2xl border border-white/10 bg-black/15 p-4"
+                                        >
+                                          <div className="flex flex-wrap items-start justify-between gap-3">
+                                            <div>
+                                              <p className="text-xs font-black uppercase tracking-[0.2em] text-white/45">
+                                                {formatDateTime(datasheet.created_at)}
+                                              </p>
+                                              <h4 className="mt-1 text-base font-black text-white">
+                                                {datasheet.product_code || "Product not recorded"}
+                                              </h4>
+                                              <p className="mt-1 text-sm text-gray-300">
+                                                Model {datasheet.product_model || product.model || "-"} · Fluid {datasheet.selected_fluid || "-"}
+                                              </p>
+                                              <p className="mt-1 text-xs text-gray-400">
+                                                DN {product.dn || "-"} · MWP {product.mwp || "-"} · Port {product.port || "-"} · Setting {product.setting || "-"}
+                                              </p>
+                                            </div>
+
+                                            <div className="flex flex-wrap items-center justify-end gap-2">
                                               <button
                                                 type="button"
-                                                onClick={() => showMoreActivities(client.id)}
-                                                className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-black text-white hover:bg-white/15"
+                                                onClick={() => setSelectedDatasheet({ client, datasheet })}
+                                                className="rounded-full border border-blue-300/50 bg-blue-500/15 px-3 py-1 text-xs font-black text-blue-100 hover:bg-blue-500/25"
                                               >
-                                                Load 10 more
+                                                See datasheet
                                               </button>
-                                            )}
-                                            {remainingCount > 0 && (
+
                                               <button
                                                 type="button"
-                                                onClick={() => showAllActivities(client.id, filteredActivities.length)}
-                                                className="rounded-full border border-[#8b5cf6]/60 bg-[#4500E8]/25 px-3 py-1 text-xs font-black text-white hover:bg-[#4500E8]/35"
+                                                onClick={() => downloadClientDatasheetPdf(client, datasheet)}
+                                                className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-black text-white hover:bg-white/20"
                                               >
-                                                Show all
+                                                Download
                                               </button>
+
+                                              <span
+                                                className={
+                                                  datasheet.pdf_downloaded
+                                                    ? "rounded-full border border-green-300/50 bg-green-500/15 px-3 py-1 text-xs font-black text-green-200"
+                                                    : "rounded-full border border-amber-300/50 bg-amber-500/15 px-3 py-1 text-xs font-black text-amber-100"
+                                                }
+                                              >
+                                                {datasheet.pdf_downloaded ? "PDF downloaded" : "Viewed only"}
+                                              </span>
+
+                                              <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-black text-white/80">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={Boolean(datasheet.followed_up)}
+                                                  disabled={savingActivityId === datasheet.id}
+                                                  onChange={(event) =>
+                                                    updateDatasheetFollowUp(
+                                                      datasheet.id,
+                                                      event.target.checked
+                                                    )
+                                                  }
+                                                  className="h-4 w-4 accent-[#4500E8]"
+                                                />
+                                                Followed up
+                                              </label>
+                                            </div>
+                                          </div>
+
+                                          <div className="mt-3 grid gap-2 text-xs text-gray-300 md:grid-cols-2">
+                                            {conditions.length === 0 ? (
+                                              <p className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
+                                                No working condition recorded.
+                                              </p>
+                                            ) : (
+                                              conditions.slice(0, 4).map((condition, index) => (
+                                                <p
+                                                  key={`${datasheet.id}-condition-${index}`}
+                                                  className="rounded-xl border border-white/10 bg-white/[0.04] p-3"
+                                                >
+                                                  {formatCondition(condition)}
+                                                </p>
+                                              ))
                                             )}
                                           </div>
+
+                                          {conditions.length > 4 && (
+                                            <p className="mt-2 text-xs font-semibold text-white/45">
+                                              +{conditions.length - 4} additional condition(s). Open datasheet to view all.
+                                            </p>
+                                          )}
+
+                                          {datasheet.followed_up && (
+                                            <p className="mt-3 text-xs font-semibold text-green-200">
+                                              Follow-up recorded {formatDateTime(datasheet.followed_up_at)}
+                                              {datasheet.followed_up_by ? ` by ${datasheet.followed_up_by}` : ""}
+                                            </p>
+                                          )}
                                         </div>
-
-                                        <div className="space-y-3">
-                                          {visibleActivities.map((activity) => {
-                                            const conditions = Array.isArray(activity.conditions)
-                                              ? activity.conditions
-                                              : []
-                                            const product = activity.product_snapshot || {}
-                                            const isDatasheet = activity.event_type === "datasheet"
-
-                                            return (
-                                              <div
-                                                key={activity.id}
-                                                className="rounded-2xl border border-white/10 bg-black/15 p-4"
-                                              >
-                                                <div className="flex flex-wrap items-start justify-between gap-3">
-                                                  <div>
-                                                    <p className="text-xs font-black uppercase tracking-[0.2em] text-white/45">
-                                                      {formatDateTime(activity.created_at)} · {getActivityTitle(activity)}
-                                                    </p>
-                                                    <h4 className="mt-1 text-base font-black text-white">
-                                                      {activity.product_code || (isDatasheet ? "Product not recorded" : "Sizing search")}
-                                                    </h4>
-                                                    <p className="mt-1 text-sm text-gray-300">
-                                                      Model {activity.product_model || product.model || "-"} · Fluid {activity.selected_fluid || "-"}
-                                                    </p>
-                                                    <p className="mt-1 text-xs text-gray-400">
-                                                      DN {product.dn || "-"} · MWP {product.mwp || "-"} · Port {product.port || "-"} · Setting {product.setting || "-"}
-                                                    </p>
-                                                    {activity.matching_products_count !== null && activity.matching_products_count !== undefined && (
-                                                      <p className="mt-1 text-xs text-gray-400">
-                                                        Matching products: {activity.matching_products_count}
-                                                      </p>
-                                                    )}
-                                                  </div>
-
-                                                  <div className="flex flex-wrap items-center gap-2">
-                                                    <span
-                                                      className={
-                                                        isDatasheet
-                                                          ? activity.pdf_downloaded
-                                                            ? "rounded-full border border-green-300/50 bg-green-500/15 px-3 py-1 text-xs font-black text-green-200"
-                                                            : "rounded-full border border-amber-300/50 bg-amber-500/15 px-3 py-1 text-xs font-black text-amber-100"
-                                                          : "rounded-full border border-blue-300/40 bg-blue-500/10 px-3 py-1 text-xs font-black text-blue-100"
-                                                      }
-                                                    >
-                                                      {isDatasheet
-                                                        ? activity.pdf_downloaded
-                                                          ? "PDF downloaded"
-                                                          : "Viewed only"
-                                                        : "Search"}
-                                                    </span>
-
-                                                    {isDatasheet && (
-                                                      <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-black text-white/80">
-                                                        <input
-                                                          type="checkbox"
-                                                          checked={Boolean(activity.followed_up)}
-                                                          disabled={savingActivityId === activity.id}
-                                                          onChange={(event) =>
-                                                            updateDatasheetFollowUp(
-                                                              activity.id,
-                                                              event.target.checked
-                                                            )
-                                                          }
-                                                          className="h-4 w-4 accent-[#4500E8]"
-                                                        />
-                                                        Followed up
-                                                      </label>
-                                                    )}
-                                                  </div>
-                                                </div>
-
-                                                <div className="mt-3 grid gap-2 text-xs text-gray-300 md:grid-cols-2">
-                                                  {conditions.length === 0 ? (
-                                                    <p className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
-                                                      No working condition recorded.
-                                                    </p>
-                                                  ) : (
-                                                    conditions.map((condition, index) => (
-                                                      <p
-                                                        key={`${activity.id}-condition-${index}`}
-                                                        className="rounded-xl border border-white/10 bg-white/[0.04] p-3"
-                                                      >
-                                                        {formatCondition(condition)}
-                                                      </p>
-                                                    ))
-                                                  )}
-                                                </div>
-
-                                                {isDatasheet && activity.followed_up && (
-                                                  <p className="mt-3 text-xs font-semibold text-green-200">
-                                                    Follow-up recorded {formatDateTime(activity.followed_up_at)}
-                                                    {activity.followed_up_by ? ` by ${activity.followed_up_by}` : ""}
-                                                  </p>
-                                                )}
-                                              </div>
-                                            )
-                                          })}
-                                        </div>
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          )
-                        })()}
+                                      )
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
                       </Fragment>
                     )
                   })}
@@ -733,6 +772,176 @@ export default function AdminClientsPage() {
           )}
         </section>
       </div>
+
+      {selectedDatasheet && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <div className="max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-3xl border border-white/15 bg-[#11132e] shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-white/10 p-5">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.25em] text-white/45">
+                  Client datasheet preview
+                </p>
+                <h3 className="mt-1 text-2xl font-black text-white">
+                  {selectedDatasheet.datasheet.product_code || "Product not recorded"}
+                </h3>
+                <p className="mt-1 text-sm text-gray-300">
+                  {formatClientName(selectedDatasheet.client)} · {selectedDatasheet.client.company} · {selectedDatasheet.client.email}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => downloadClientDatasheetPdf(selectedDatasheet.client, selectedDatasheet.datasheet)}
+                  className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-black text-white hover:bg-white/20"
+                >
+                  Download
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedDatasheet(null)}
+                  className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-white/10 text-xl font-black text-white hover:bg-white/20"
+                  aria-label="Close datasheet preview"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+
+            <div className="max-h-[calc(92vh-94px)] overflow-y-auto p-5">
+              {(() => {
+                const datasheet = selectedDatasheet.datasheet
+                const client = selectedDatasheet.client
+                const product = datasheet.product_snapshot || {}
+                const conditions = Array.isArray(datasheet.conditions) ? datasheet.conditions : []
+                const summary = datasheet.sizing_summary || {}
+
+                return (
+                  <div className="rounded-3xl border border-white/10 bg-white p-6 text-slate-900">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                      <div className="flex flex-wrap items-start justify-between gap-5">
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-[0.24em] text-slate-500">
+                            PRISM admin datasheet
+                          </p>
+                          <h4 className="mt-2 text-2xl font-black text-slate-950">
+                            {datasheet.product_code || "Product not recorded"}
+                          </h4>
+                          <p className="mt-1 text-sm font-semibold text-slate-600">
+                            Model {datasheet.product_model || product.model || "-"} · Viewed {formatDateTime(datasheet.created_at)}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border border-violet-200 bg-white px-5 py-3 text-center">
+                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Status</p>
+                          <p className="mt-1 text-sm font-black text-violet-700">
+                            {datasheet.pdf_downloaded ? "Downloaded" : "Viewed only"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 grid gap-3 md:grid-cols-3">
+                      <div className="rounded-2xl border border-slate-200 p-4">
+                        <p className="text-xs font-black uppercase text-slate-500">Client</p>
+                        <p className="mt-2 font-black">{formatClientName(client)}</p>
+                        <p className="text-sm text-slate-600">{client.company}</p>
+                        <p className="text-sm text-slate-600">{client.email}</p>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 p-4">
+                        <p className="text-xs font-black uppercase text-slate-500">Product</p>
+                        <p className="mt-2 text-sm font-bold">DN {product.dn || "-"}</p>
+                        <p className="text-sm font-bold">MWP {product.mwp || "-"}</p>
+                        <p className="text-sm font-bold">Port {product.port || "-"}</p>
+                        <p className="text-sm font-bold">Setting {product.setting || "-"}</p>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 p-4">
+                        <p className="text-xs font-black uppercase text-slate-500">Sizing</p>
+                        <p className="mt-2 text-sm font-bold">Fluid {datasheet.selected_fluid || "-"}</p>
+                        <p className="text-sm font-bold">Required seat {safeValue(summary.requiredSeat || summary.seatRequired)}</p>
+                        <p className="text-sm font-bold">Required port {safeValue(summary.requiredPort || summary.portRequired)}</p>
+                        <p className="text-sm font-bold">Matches {safeValue(datasheet.matching_products_count)}</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 rounded-2xl border border-slate-200 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <h5 className="text-sm font-black uppercase tracking-[0.18em] text-slate-700">
+                          Working conditions
+                        </h5>
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">
+                          {conditions.length} condition(s)
+                        </span>
+                      </div>
+
+                      {conditions.length === 0 ? (
+                        <p className="mt-4 text-sm text-slate-500">No working condition recorded.</p>
+                      ) : (
+                        <div className="mt-4 overflow-x-auto">
+                          <table className="w-full min-w-[720px] text-left text-sm">
+                            <thead className="bg-slate-100 text-xs uppercase text-slate-500">
+                              <tr>
+                                <th className="p-3">Condition</th>
+                                <th className="p-3">Inlet pressure</th>
+                                <th className="p-3">Outlet pressure</th>
+                                <th className="p-3">Flow</th>
+                                <th className="p-3">Temperature</th>
+                                <th className="p-3">Utilization</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {conditions.map((condition, index) => (
+                                <tr key={`${datasheet.id}-modal-condition-${index}`} className="border-t border-slate-200">
+                                  <td className="p-3 font-black">C{condition.id || index + 1}</td>
+                                  <td className="p-3">{formatNumber(condition.inletPressure, " bar")}</td>
+                                  <td className="p-3">{formatNumber(condition.outletPressure, " bar")}</td>
+                                  <td className="p-3">
+                                    {condition.flowNm3h
+                                      ? formatNumber(condition.flowNm3h, " Nm3/h")
+                                      : formatNumber(condition.flowRateGs, " g/s")}
+                                  </td>
+                                  <td className="p-3">{formatNumber(condition.temperature, " °C")}</td>
+                                  <td className="p-3">{condition.utilizationPercent ? formatNumber(condition.utilizationPercent, "%") : "-"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-5 rounded-2xl border border-slate-200 p-4">
+                      <h5 className="text-sm font-black uppercase tracking-[0.18em] text-slate-700">
+                        Commercial follow-up
+                      </h5>
+                      <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+                        <span className="rounded-full bg-slate-100 px-3 py-2 font-bold text-slate-700">
+                          {datasheet.pdf_downloaded ? "PDF downloaded" : "Viewed only"}
+                        </span>
+                        <label className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-slate-100 px-3 py-2 font-bold text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(datasheet.followed_up)}
+                            disabled={savingActivityId === datasheet.id}
+                            onChange={(event) => updateDatasheetFollowUp(datasheet.id, event.target.checked)}
+                            className="h-4 w-4 accent-[#4500E8]"
+                          />
+                          Followed up
+                        </label>
+                        {datasheet.followed_up && (
+                          <span className="text-sm font-semibold text-green-700">
+                            Recorded {formatDateTime(datasheet.followed_up_at)}
+                            {datasheet.followed_up_by ? ` by ${datasheet.followed_up_by}` : ""}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
