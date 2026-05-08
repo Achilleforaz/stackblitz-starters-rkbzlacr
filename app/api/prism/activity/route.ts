@@ -32,12 +32,32 @@ function isOptionalActivityTableError(error: any) {
   )
 }
 
-async function getClientProfile(request: Request) {
+function pickActive(rows: any[] | null | undefined) {
+  if (!Array.isArray(rows) || rows.length === 0) return null
+  return rows.find((row: any) => row.is_active !== false) || rows[0]
+}
+
+async function selectClientBy(column: string, value: string, operator: "eq" | "ilike" = "eq") {
+  if (!value) return null
+
+  let query = supabaseAdmin.from("client_users").select("*").limit(20)
+  query = operator === "ilike" ? query.ilike(column, value) : query.eq(column, value)
+
+  const { data, error } = await query
+
+  // Some older deployments do not have auth_user_id / user_id columns.
+  // Ignore that single lookup and continue with the next strategy.
+  if (error) return null
+
+  return pickActive(data)
+}
+
+async function getAuthenticatedClientContext(request: Request) {
   const authHeader = request.headers.get("authorization")
 
   if (!authHeader?.startsWith("Bearer ")) return null
 
-  const token = authHeader.replace("Bearer ", "")
+  const token = authHeader.replace("Bearer ", "").trim()
   const {
     data: { user },
     error: userError,
@@ -47,26 +67,43 @@ async function getClientProfile(request: Request) {
 
   const email = cleanEmail(user.email)
 
-  const { data, error } = await supabaseAdmin
-    .from("client_users")
-    .select("*")
-    .or(`email.ilike.${email},auth_user_id.eq.${user.id},user_id.eq.${user.id},id.eq.${user.id}`)
-    .limit(20)
+  // Important: do NOT use a single .or(...) query here.
+  // If one optional column does not exist in Supabase, PostgREST rejects the whole query
+  // and the activity is silently skipped. Sequential lookups keep tracking robust.
+  const client =
+    (await selectClientBy("email", email, "ilike")) ||
+    (await selectClientBy("email", `%${email}%`, "ilike")) ||
+    (await selectClientBy("auth_user_id", user.id)) ||
+    (await selectClientBy("user_id", user.id)) ||
+    (await selectClientBy("id", user.id))
 
-  if (error) return null
+  const activeClient = client && client.is_active !== false ? client : null
 
-  const matches = data || []
-  const active = matches.find((client: any) => client.is_active !== false) || matches[0] || null
+  if (activeClient?.id) {
+    if (!activeClient.auth_user_id && !activeClient.user_id && String(activeClient.id) !== String(user.id)) {
+      await supabaseAdmin
+        .from("client_users")
+        .update({ auth_user_id: user.id })
+        .eq("id", activeClient.id)
+    }
 
-  if (!active || active.is_active === false) return null
+    return {
+      id: clean(activeClient.id),
+      email: cleanEmail(activeClient.email || email),
+      first_name: clean(activeClient.first_name || activeClient.firstName),
+      last_name: clean(activeClient.last_name || activeClient.lastName),
+      company: clean(activeClient.company),
+    }
+  }
 
+  // Fallback: still record the PRISM activity with the authenticated email.
+  // Admin merge is also done by email, so the activity can attach to the client later.
   return {
-    ...active,
-    id: clean(active.id || user.id),
-    email: cleanEmail(active.email || email),
-    first_name: clean(active.first_name),
-    last_name: clean(active.last_name),
-    company: clean(active.company),
+    id: clean(user.id),
+    email,
+    first_name: "",
+    last_name: "",
+    company: "",
   }
 }
 
@@ -78,10 +115,10 @@ function normalizeEventType(value: unknown): ActivityEventType | null {
 
 export async function POST(request: Request) {
   try {
-    const client = await getClientProfile(request)
+    const client = await getAuthenticatedClientContext(request)
 
     if (!client) {
-      return NextResponse.json({ skipped: true, reason: "No active client profile" })
+      return NextResponse.json({ skipped: true, reason: "No authenticated client session" })
     }
 
     const body = await request.json()
