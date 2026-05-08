@@ -25,9 +25,9 @@ type ClientDatasheetActivity = {
 
 type ClientActivitySummary = {
   clientId: string
-  userEmail?: string | null
   searchCount: number
   datasheets: ClientDatasheetActivity[]
+  activities?: ClientDatasheetActivity[]
   lastActivityAt?: string | null
 }
 
@@ -45,6 +45,7 @@ type ClientUser = {
   search_count?: number
   last_activity_at?: string | null
   datasheets?: ClientDatasheetActivity[]
+  activities?: ClientDatasheetActivity[]
 }
 
 function formatDateTime(value?: string | null) {
@@ -77,6 +78,55 @@ function formatCondition(condition: Record<string, any>) {
   return `${id}: ${inlet} → ${outlet} · ${flow} · ${temperature}${utilization}`
 }
 
+function getActivityTitle(activity: ClientDatasheetActivity) {
+  if (activity.event_type === "search") return "Sizing search"
+  if (activity.pdf_downloaded) return "Datasheet downloaded"
+  return "Datasheet viewed"
+}
+
+function getActivitySearchText(activity: ClientDatasheetActivity) {
+  const product = activity.product_snapshot || {}
+  return [
+    activity.event_type,
+    activity.product_code,
+    activity.product_model,
+    activity.selected_fluid,
+    product.model,
+    product.code,
+    product.newCode,
+    product.dn,
+    product.mwp,
+    product.port,
+    product.setting,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+}
+
+function filterClientActivities(
+  activities: ClientDatasheetActivity[],
+  filter: string,
+  search: string
+) {
+  const normalizedSearch = search.toLowerCase().trim()
+
+  return activities.filter((activity) => {
+    const matchesFilter =
+      filter === "all" ||
+      (filter === "search" && activity.event_type === "search") ||
+      (filter === "datasheet" && activity.event_type === "datasheet") ||
+      (filter === "downloaded" && Boolean(activity.pdf_downloaded)) ||
+      (filter === "to_follow" && activity.event_type === "datasheet" && !activity.followed_up) ||
+      (filter === "followed" && activity.event_type === "datasheet" && Boolean(activity.followed_up))
+
+    if (!matchesFilter) return false
+    if (!normalizedSearch) return true
+
+    return getActivitySearchText(activity).includes(normalizedSearch)
+  })
+}
+
 function mergeClientsWithActivity(
   clients: ClientUser[],
   activitySummaries: ClientActivitySummary[]
@@ -87,7 +137,7 @@ function mergeClientsWithActivity(
     byClientId.set(String(summary.clientId), summary)
 
     const firstDatasheet = summary.datasheets?.[0]
-    const email = String(summary.userEmail || firstDatasheet?.user_email || "").toLowerCase().trim()
+    const email = String(firstDatasheet?.user_email || "").toLowerCase().trim()
     if (email) byClientId.set(email, summary)
   })
 
@@ -100,6 +150,7 @@ function mergeClientsWithActivity(
       search_count: summary?.searchCount || 0,
       last_activity_at: summary?.lastActivityAt || null,
       datasheets: summary?.datasheets || [],
+      activities: summary?.activities || summary?.datasheets || [],
     }
   })
 }
@@ -114,6 +165,9 @@ export default function AdminClientsPage() {
   const [savingId, setSavingId] = useState<string | null>(null)
   const [savingActivityId, setSavingActivityId] = useState<string | null>(null)
   const [expandedClientId, setExpandedClientId] = useState<string | null>(null)
+  const [activityVisibleCounts, setActivityVisibleCounts] = useState<Record<string, number>>({})
+  const [activityFilter, setActivityFilter] = useState("all")
+  const [activitySearch, setActivitySearch] = useState("")
 
   useEffect(() => {
     loadClients()
@@ -221,6 +275,7 @@ export default function AdminClientsPage() {
           search_count: item.search_count,
           last_activity_at: item.last_activity_at,
           datasheets: item.datasheets,
+          activities: item.activities,
         }
       })
     )
@@ -266,6 +321,9 @@ export default function AdminClientsPage() {
         datasheets: (client.datasheets || []).map((datasheet) =>
           datasheet.id === result.activity.id ? result.activity : datasheet
         ),
+        activities: (client.activities || []).map((activity) =>
+          activity.id === result.activity.id ? result.activity : activity
+        ),
       }))
     )
   }
@@ -287,6 +345,24 @@ export default function AdminClientsPage() {
 
   function toggleClientDetails(clientId: string) {
     setExpandedClientId((current) => (current === clientId ? null : clientId))
+    setActivityVisibleCounts((current) => ({
+      ...current,
+      [clientId]: current[clientId] || 10,
+    }))
+  }
+
+  function showMoreActivities(clientId: string) {
+    setActivityVisibleCounts((current) => ({
+      ...current,
+      [clientId]: (current[clientId] || 10) + 10,
+    }))
+  }
+
+  function showAllActivities(clientId: string, total: number) {
+    setActivityVisibleCounts((current) => ({
+      ...current,
+      [clientId]: total,
+    }))
   }
 
   async function logout() {
@@ -460,114 +536,194 @@ export default function AdminClientsPage() {
                           </td>
                         </tr>
 
-                        {isExpanded && (
-                          <tr key={`${client.id}-details`} className="border-t border-white/10 bg-white/[0.035]">
-                            <td colSpan={8} className="p-4">
-                              <div className="rounded-2xl border border-white/10 bg-[#10112b]/80 p-4">
-                                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                                  <div>
-                                    <h3 className="text-lg font-black">PRISM client activity</h3>
-                                    <p className="mt-1 text-xs text-gray-300">
-                                      Commercial tracking for viewed datasheets and downloaded PDFs.
-                                    </p>
+                        {isExpanded && (() => {
+                          const activities = client.activities || []
+                          const filteredActivities = filterClientActivities(
+                            activities,
+                            activityFilter,
+                            activitySearch
+                          )
+                          const visibleCount = activityVisibleCounts[client.id] || 10
+                          const visibleActivities = filteredActivities.slice(0, visibleCount)
+                          const remainingCount = Math.max(filteredActivities.length - visibleActivities.length, 0)
+
+                          return (
+                            <tr key={`${client.id}-details`} className="border-t border-white/10 bg-white/[0.035]">
+                              <td colSpan={8} className="p-4">
+                                <div className="rounded-2xl border border-white/10 bg-[#10112b]/80 p-4">
+                                  <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                                    <div>
+                                      <h3 className="text-lg font-black">PRISM client activity</h3>
+                                      <p className="mt-1 max-w-3xl text-xs text-gray-300">
+                                        All searches are available in a scrollable timeline. The panel opens on the latest 10 events to stay readable; use Load more or Show all to inspect the complete client history.
+                                      </p>
+                                    </div>
+                                    <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-black text-white/70">
+                                      {client.search_count || 0} searches · {datasheets.length} datasheets · {activities.length} total events
+                                    </span>
                                   </div>
-                                  <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-black text-white/70">
-                                    {client.search_count || 0} searches · {datasheets.length} datasheets
-                                  </span>
-                                </div>
 
-                                {datasheets.length === 0 ? (
-                                  <p className="text-sm text-gray-300">No datasheet viewed yet.</p>
-                                ) : (
-                                  <div className="space-y-3">
-                                    {datasheets.map((datasheet) => {
-                                      const conditions = Array.isArray(datasheet.conditions)
-                                        ? datasheet.conditions
-                                        : []
-                                      const product = datasheet.product_snapshot || {}
+                                  <div className="mb-4 grid gap-3 rounded-2xl border border-white/10 bg-black/15 p-3 lg:grid-cols-[1fr_210px]">
+                                    <input
+                                      type="search"
+                                      value={activitySearch}
+                                      onChange={(event) => setActivitySearch(event.target.value)}
+                                      placeholder="Search product, model, fluid, DN, port..."
+                                      className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm font-semibold text-white placeholder:text-white/35 outline-none focus:border-[#8b5cf6]"
+                                    />
+                                    <select
+                                      value={activityFilter}
+                                      onChange={(event) => setActivityFilter(event.target.value)}
+                                      className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm font-bold text-white outline-none focus:border-[#8b5cf6]"
+                                    >
+                                      <option value="all">All activity</option>
+                                      <option value="search">Searches only</option>
+                                      <option value="datasheet">Datasheets only</option>
+                                      <option value="downloaded">PDF downloaded</option>
+                                      <option value="to_follow">To follow up</option>
+                                      <option value="followed">Followed up</option>
+                                    </select>
+                                  </div>
 
-                                      return (
-                                        <div
-                                          key={datasheet.id}
-                                          className="rounded-2xl border border-white/10 bg-black/15 p-4"
-                                        >
-                                          <div className="flex flex-wrap items-start justify-between gap-3">
-                                            <div>
-                                              <p className="text-xs font-black uppercase tracking-[0.2em] text-white/45">
-                                                {formatDateTime(datasheet.created_at)}
-                                              </p>
-                                              <h4 className="mt-1 text-base font-black text-white">
-                                                {datasheet.product_code || "Product not recorded"}
-                                              </h4>
-                                              <p className="mt-1 text-sm text-gray-300">
-                                                Model {datasheet.product_model || product.model || "-"} · Fluid {datasheet.selected_fluid || "-"}
-                                              </p>
-                                              <p className="mt-1 text-xs text-gray-400">
-                                                DN {product.dn || "-"} · MWP {product.mwp || "-"} · Port {product.port || "-"} · Setting {product.setting || "-"}
-                                              </p>
-                                            </div>
-
-                                            <div className="flex flex-wrap items-center gap-2">
-                                              <span
-                                                className={
-                                                  datasheet.pdf_downloaded
-                                                    ? "rounded-full border border-green-300/50 bg-green-500/15 px-3 py-1 text-xs font-black text-green-200"
-                                                    : "rounded-full border border-amber-300/50 bg-amber-500/15 px-3 py-1 text-xs font-black text-amber-100"
-                                                }
+                                  {activities.length === 0 ? (
+                                    <p className="text-sm text-gray-300">No PRISM activity recorded yet.</p>
+                                  ) : filteredActivities.length === 0 ? (
+                                    <p className="text-sm text-gray-300">No activity matches this filter.</p>
+                                  ) : (
+                                    <>
+                                      <div className="max-h-[720px] overflow-y-auto pr-2">
+                                        <div className="sticky top-0 z-10 mb-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/10 bg-[#10112b]/95 p-3 backdrop-blur">
+                                          <p className="text-xs font-black uppercase tracking-[0.18em] text-white/45">
+                                            Showing {visibleActivities.length} / {filteredActivities.length} events
+                                          </p>
+                                          <div className="flex flex-wrap gap-2">
+                                            {remainingCount > 0 && (
+                                              <button
+                                                type="button"
+                                                onClick={() => showMoreActivities(client.id)}
+                                                className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-black text-white hover:bg-white/15"
                                               >
-                                                {datasheet.pdf_downloaded ? "PDF downloaded" : "Viewed only"}
-                                              </span>
-
-                                              <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-black text-white/80">
-                                                <input
-                                                  type="checkbox"
-                                                  checked={Boolean(datasheet.followed_up)}
-                                                  disabled={savingActivityId === datasheet.id}
-                                                  onChange={(event) =>
-                                                    updateDatasheetFollowUp(
-                                                      datasheet.id,
-                                                      event.target.checked
-                                                    )
-                                                  }
-                                                  className="h-4 w-4 accent-[#4500E8]"
-                                                />
-                                                Followed up
-                                              </label>
-                                            </div>
-                                          </div>
-
-                                          <div className="mt-3 grid gap-2 text-xs text-gray-300 md:grid-cols-2">
-                                            {conditions.length === 0 ? (
-                                              <p className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
-                                                No working condition recorded.
-                                              </p>
-                                            ) : (
-                                              conditions.map((condition, index) => (
-                                                <p
-                                                  key={`${datasheet.id}-condition-${index}`}
-                                                  className="rounded-xl border border-white/10 bg-white/[0.04] p-3"
-                                                >
-                                                  {formatCondition(condition)}
-                                                </p>
-                                              ))
+                                                Load 10 more
+                                              </button>
+                                            )}
+                                            {remainingCount > 0 && (
+                                              <button
+                                                type="button"
+                                                onClick={() => showAllActivities(client.id, filteredActivities.length)}
+                                                className="rounded-full border border-[#8b5cf6]/60 bg-[#4500E8]/25 px-3 py-1 text-xs font-black text-white hover:bg-[#4500E8]/35"
+                                              >
+                                                Show all
+                                              </button>
                                             )}
                                           </div>
-
-                                          {datasheet.followed_up && (
-                                            <p className="mt-3 text-xs font-semibold text-green-200">
-                                              Follow-up recorded {formatDateTime(datasheet.followed_up_at)}
-                                              {datasheet.followed_up_by ? ` by ${datasheet.followed_up_by}` : ""}
-                                            </p>
-                                          )}
                                         </div>
-                                      )
-                                    })}
-                                  </div>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        )}
+
+                                        <div className="space-y-3">
+                                          {visibleActivities.map((activity) => {
+                                            const conditions = Array.isArray(activity.conditions)
+                                              ? activity.conditions
+                                              : []
+                                            const product = activity.product_snapshot || {}
+                                            const isDatasheet = activity.event_type === "datasheet"
+
+                                            return (
+                                              <div
+                                                key={activity.id}
+                                                className="rounded-2xl border border-white/10 bg-black/15 p-4"
+                                              >
+                                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                                  <div>
+                                                    <p className="text-xs font-black uppercase tracking-[0.2em] text-white/45">
+                                                      {formatDateTime(activity.created_at)} · {getActivityTitle(activity)}
+                                                    </p>
+                                                    <h4 className="mt-1 text-base font-black text-white">
+                                                      {activity.product_code || (isDatasheet ? "Product not recorded" : "Sizing search")}
+                                                    </h4>
+                                                    <p className="mt-1 text-sm text-gray-300">
+                                                      Model {activity.product_model || product.model || "-"} · Fluid {activity.selected_fluid || "-"}
+                                                    </p>
+                                                    <p className="mt-1 text-xs text-gray-400">
+                                                      DN {product.dn || "-"} · MWP {product.mwp || "-"} · Port {product.port || "-"} · Setting {product.setting || "-"}
+                                                    </p>
+                                                    {activity.matching_products_count !== null && activity.matching_products_count !== undefined && (
+                                                      <p className="mt-1 text-xs text-gray-400">
+                                                        Matching products: {activity.matching_products_count}
+                                                      </p>
+                                                    )}
+                                                  </div>
+
+                                                  <div className="flex flex-wrap items-center gap-2">
+                                                    <span
+                                                      className={
+                                                        isDatasheet
+                                                          ? activity.pdf_downloaded
+                                                            ? "rounded-full border border-green-300/50 bg-green-500/15 px-3 py-1 text-xs font-black text-green-200"
+                                                            : "rounded-full border border-amber-300/50 bg-amber-500/15 px-3 py-1 text-xs font-black text-amber-100"
+                                                          : "rounded-full border border-blue-300/40 bg-blue-500/10 px-3 py-1 text-xs font-black text-blue-100"
+                                                      }
+                                                    >
+                                                      {isDatasheet
+                                                        ? activity.pdf_downloaded
+                                                          ? "PDF downloaded"
+                                                          : "Viewed only"
+                                                        : "Search"}
+                                                    </span>
+
+                                                    {isDatasheet && (
+                                                      <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-black text-white/80">
+                                                        <input
+                                                          type="checkbox"
+                                                          checked={Boolean(activity.followed_up)}
+                                                          disabled={savingActivityId === activity.id}
+                                                          onChange={(event) =>
+                                                            updateDatasheetFollowUp(
+                                                              activity.id,
+                                                              event.target.checked
+                                                            )
+                                                          }
+                                                          className="h-4 w-4 accent-[#4500E8]"
+                                                        />
+                                                        Followed up
+                                                      </label>
+                                                    )}
+                                                  </div>
+                                                </div>
+
+                                                <div className="mt-3 grid gap-2 text-xs text-gray-300 md:grid-cols-2">
+                                                  {conditions.length === 0 ? (
+                                                    <p className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
+                                                      No working condition recorded.
+                                                    </p>
+                                                  ) : (
+                                                    conditions.map((condition, index) => (
+                                                      <p
+                                                        key={`${activity.id}-condition-${index}`}
+                                                        className="rounded-xl border border-white/10 bg-white/[0.04] p-3"
+                                                      >
+                                                        {formatCondition(condition)}
+                                                      </p>
+                                                    ))
+                                                  )}
+                                                </div>
+
+                                                {isDatasheet && activity.followed_up && (
+                                                  <p className="mt-3 text-xs font-semibold text-green-200">
+                                                    Follow-up recorded {formatDateTime(activity.followed_up_at)}
+                                                    {activity.followed_up_by ? ` by ${activity.followed_up_by}` : ""}
+                                                  </p>
+                                                )}
+                                              </div>
+                                            )
+                                          })}
+                                        </div>
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })()}
                       </Fragment>
                     )
                   })}
