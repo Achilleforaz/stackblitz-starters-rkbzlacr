@@ -525,7 +525,7 @@ export default function AdminClientsPage() {
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-2xl font-black">Clients</h2>
-              <p className="mt-1 text-sm text-gray-300">
+              <p className="mt-1 text-sm text-slate-300">
                 Click a client to open a scrollable activity history, view datasheets in a modal, download admin copies, and track follow-up.
               </p>
             </div>
@@ -684,7 +684,7 @@ export default function AdminClientsPage() {
                                               <button
                                                 type="button"
                                                 onClick={() => setSelectedDatasheet({ client, datasheet })}
-                                                className="rounded-full border border-blue-300/50 bg-blue-500/15 px-3 py-1 text-xs font-black text-blue-100 hover:bg-blue-500/25"
+                                                className="rounded-full border border-[#8b5cf6]/45 bg-[#8b5cf6]/14 px-3 py-1 text-xs font-black text-violet-100 transition hover:bg-[#8b5cf6]/24"
                                               >
                                                 See datasheet
                                               </button>
@@ -692,7 +692,7 @@ export default function AdminClientsPage() {
                                               <button
                                                 type="button"
                                                 onClick={() => downloadClientDatasheetPdf(client, datasheet)}
-                                                className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-black text-white hover:bg-white/20"
+                                                className="rounded-full border border-emerald-300/35 bg-emerald-500/12 px-3 py-1 text-xs font-black text-emerald-100 transition hover:bg-emerald-500/22"
                                               >
                                                 Download
                                               </button>
@@ -776,9 +776,9 @@ export default function AdminClientsPage() {
       {selectedDatasheet && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
           <div className="max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-3xl border border-white/15 bg-[#11132e] shadow-2xl">
-            <div className="flex items-start justify-between gap-4 border-b border-white/10 p-5">
+            <div className="flex items-start justify-between gap-4 border-b border-white/10 bg-[linear-gradient(90deg,rgba(69,0,232,0.22),rgba(69,0,232,0.05))] p-5">
               <div>
-                <p className="text-xs font-black uppercase tracking-[0.25em] text-white/45">
+                <p className="text-xs font-black uppercase tracking-[0.25em] text-violet-200/80">
                   Client datasheet preview
                 </p>
                 <h3 className="mt-1 text-2xl font-black text-white">
@@ -793,14 +793,14 @@ export default function AdminClientsPage() {
                 <button
                   type="button"
                   onClick={() => downloadClientDatasheetPdf(selectedDatasheet.client, selectedDatasheet.datasheet)}
-                  className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-black text-white hover:bg-white/20"
+                  className="rounded-full border border-[#8b5cf6]/45 bg-[#8b5cf6]/18 px-4 py-2 text-sm font-black text-violet-50 transition hover:bg-[#8b5cf6]/28"
                 >
                   Download
                 </button>
                 <button
                   type="button"
                   onClick={() => setSelectedDatasheet(null)}
-                  className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-white/10 text-xl font-black text-white hover:bg-white/20"
+                  className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-white/8 text-xl font-black text-white transition hover:bg-white/15"
                   aria-label="Close datasheet preview"
                 >
                   ×
@@ -808,7 +808,7 @@ export default function AdminClientsPage() {
               </div>
             </div>
 
-            <div className="max-h-[calc(92vh-94px)] overflow-y-auto p-5">
+            <div className="max-h-[calc(92vh-94px)] overflow-y-auto bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,0.12),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01))] p-5">
               {(() => {
                 const datasheet = selectedDatasheet.datasheet
                 const client = selectedDatasheet.client
@@ -817,23 +817,23 @@ export default function AdminClientsPage() {
                 const summary = datasheet.sizing_summary || {}
 
                 return (
-                  <div className="rounded-3xl border border-white/10 bg-white p-6 text-slate-900">
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                  <div className="rounded-3xl border border-[#d8def0] bg-[#f6f8fc] p-6 text-slate-900 shadow-[0_20px_50px_rgba(15,23,42,0.18)]">
+                    <div className="rounded-2xl border border-[#d9deed] bg-white p-5 shadow-sm">
                       <div className="flex flex-wrap items-start justify-between gap-5">
                         <div>
-                          <p className="text-xs font-black uppercase tracking-[0.24em] text-slate-500">
+                          <p className="text-xs font-black uppercase tracking-[0.24em] text-[#64748b]">
                             PRISM admin datasheet
                           </p>
                           <h4 className="mt-2 text-2xl font-black text-slate-950">
                             {datasheet.product_code || "Product not recorded"}
                           </h4>
-                          <p className="mt-1 text-sm font-semibold text-slate-600">
+                          <p className="mt-1 text-sm font-semibold text-slate-500">
                             Model {datasheet.product_model || product.model || "-"} · Viewed {formatDateTime(datasheet.created_at)}
                           </p>
                         </div>
-                        <div className="rounded-2xl border border-violet-200 bg-white px-5 py-3 text-center">
-                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Status</p>
-                          <p className="mt-1 text-sm font-black text-violet-700">
+                        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-center shadow-sm">
+                          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-700/70">Status</p>
+                          <p className="mt-1 text-sm font-black text-emerald-700">
                             {datasheet.pdf_downloaded ? "Downloaded" : "Viewed only"}
                           </p>
                         </div>
@@ -841,21 +841,21 @@ export default function AdminClientsPage() {
                     </div>
 
                     <div className="mt-5 grid gap-3 md:grid-cols-3">
-                      <div className="rounded-2xl border border-slate-200 p-4">
-                        <p className="text-xs font-black uppercase text-slate-500">Client</p>
+                      <div className="rounded-2xl border border-[#d9deed] bg-white p-4 shadow-sm">
+                        <p className="text-xs font-black uppercase tracking-[0.16em] text-[#64748b]">Client</p>
                         <p className="mt-2 font-black">{formatClientName(client)}</p>
                         <p className="text-sm text-slate-600">{client.company}</p>
                         <p className="text-sm text-slate-600">{client.email}</p>
                       </div>
-                      <div className="rounded-2xl border border-slate-200 p-4">
-                        <p className="text-xs font-black uppercase text-slate-500">Product</p>
+                      <div className="rounded-2xl border border-[#d9deed] bg-white p-4 shadow-sm">
+                        <p className="text-xs font-black uppercase tracking-[0.16em] text-[#64748b]">Product</p>
                         <p className="mt-2 text-sm font-bold">DN {product.dn || "-"}</p>
                         <p className="text-sm font-bold">MWP {product.mwp || "-"}</p>
                         <p className="text-sm font-bold">Port {product.port || "-"}</p>
                         <p className="text-sm font-bold">Setting {product.setting || "-"}</p>
                       </div>
-                      <div className="rounded-2xl border border-slate-200 p-4">
-                        <p className="text-xs font-black uppercase text-slate-500">Sizing</p>
+                      <div className="rounded-2xl border border-[#d9deed] bg-white p-4 shadow-sm">
+                        <p className="text-xs font-black uppercase tracking-[0.16em] text-[#64748b]">Sizing</p>
                         <p className="mt-2 text-sm font-bold">Fluid {datasheet.selected_fluid || "-"}</p>
                         <p className="text-sm font-bold">Required seat {safeValue(summary.requiredSeat || summary.seatRequired)}</p>
                         <p className="text-sm font-bold">Required port {safeValue(summary.requiredPort || summary.portRequired)}</p>
@@ -863,12 +863,12 @@ export default function AdminClientsPage() {
                       </div>
                     </div>
 
-                    <div className="mt-5 rounded-2xl border border-slate-200 p-4">
+                    <div className="mt-5 rounded-2xl border border-[#d9deed] bg-white p-4 shadow-sm">
                       <div className="flex items-center justify-between gap-3">
-                        <h5 className="text-sm font-black uppercase tracking-[0.18em] text-slate-700">
+                        <h5 className="text-sm font-black uppercase tracking-[0.18em] text-[#334155]">
                           Working conditions
                         </h5>
-                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">
+                        <span className="rounded-full bg-[#eef2ff] px-3 py-1 text-xs font-black text-[#5b21b6]">
                           {conditions.length} condition(s)
                         </span>
                       </div>
@@ -876,9 +876,9 @@ export default function AdminClientsPage() {
                       {conditions.length === 0 ? (
                         <p className="mt-4 text-sm text-slate-500">No working condition recorded.</p>
                       ) : (
-                        <div className="mt-4 overflow-x-auto">
-                          <table className="w-full min-w-[720px] text-left text-sm">
-                            <thead className="bg-slate-100 text-xs uppercase text-slate-500">
+                        <div className="mt-4 overflow-x-auto rounded-2xl border border-[#e2e8f0]">
+                          <table className="w-full min-w-[720px] text-left text-sm bg-white">
+                            <thead className="bg-[#eef2ff] text-xs uppercase text-[#5b21b6]">
                               <tr>
                                 <th className="p-3">Condition</th>
                                 <th className="p-3">Inlet pressure</th>
@@ -890,7 +890,7 @@ export default function AdminClientsPage() {
                             </thead>
                             <tbody>
                               {conditions.map((condition, index) => (
-                                <tr key={`${datasheet.id}-modal-condition-${index}`} className="border-t border-slate-200">
+                                <tr key={`${datasheet.id}-modal-condition-${index}`} className="border-t border-slate-200 even:bg-slate-50/80">
                                   <td className="p-3 font-black">C{condition.id || index + 1}</td>
                                   <td className="p-3">{formatNumber(condition.inletPressure, " bar")}</td>
                                   <td className="p-3">{formatNumber(condition.outletPressure, " bar")}</td>
@@ -909,15 +909,15 @@ export default function AdminClientsPage() {
                       )}
                     </div>
 
-                    <div className="mt-5 rounded-2xl border border-slate-200 p-4">
-                      <h5 className="text-sm font-black uppercase tracking-[0.18em] text-slate-700">
+                    <div className="mt-5 rounded-2xl border border-[#d9deed] bg-white p-4 shadow-sm">
+                      <h5 className="text-sm font-black uppercase tracking-[0.18em] text-[#334155]">
                         Commercial follow-up
                       </h5>
                       <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
-                        <span className="rounded-full bg-slate-100 px-3 py-2 font-bold text-slate-700">
+                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 font-bold text-emerald-800">
                           {datasheet.pdf_downloaded ? "PDF downloaded" : "Viewed only"}
                         </span>
-                        <label className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-slate-100 px-3 py-2 font-bold text-slate-700">
+                        <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#d9deed] bg-[#f8fafc] px-3 py-2 font-bold text-slate-700">
                           <input
                             type="checkbox"
                             checked={Boolean(datasheet.followed_up)}
@@ -928,7 +928,7 @@ export default function AdminClientsPage() {
                           Followed up
                         </label>
                         {datasheet.followed_up && (
-                          <span className="text-sm font-semibold text-green-700">
+                          <span className="text-sm font-semibold text-emerald-700">
                             Recorded {formatDateTime(datasheet.followed_up_at)}
                             {datasheet.followed_up_by ? ` by ${datasheet.followed_up_by}` : ""}
                           </span>
