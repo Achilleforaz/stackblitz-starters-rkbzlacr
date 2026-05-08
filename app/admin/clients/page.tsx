@@ -303,7 +303,7 @@ function downloadClientDatasheetPdf(client: ClientUser, datasheet: ClientDatashe
   keyValue("Follow-up by", datasheet.followed_up_by || "-", margin + (cardW + 3) * 3, y, cardW)
   y += 24
 
-  const note = clean(datasheet.admin_note)
+  const note = String(datasheet.admin_note || "").trim()
   if (note) {
     section("Internal admin note")
     doc.setDrawColor(225, 228, 235)
