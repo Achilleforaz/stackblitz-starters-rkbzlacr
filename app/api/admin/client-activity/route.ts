@@ -261,7 +261,7 @@ export async function POST(request: Request) {
             error:
               "PRISM activity tracking is not available yet. Run supabase/prism-client-activity-admin-comments.sql, then try again.",
           },
-          { status: 503 }https://github.com/Achilleforaz/stackblitz-starters-rkbzlacr/blob/main/app/api/admin/client-activity/route.ts
+          { status: 503 }
         )
       }
 
