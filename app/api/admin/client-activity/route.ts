@@ -117,12 +117,43 @@ export async function GET(request: Request) {
   }
 
   const grouped = new Map<string, any>()
+  const groupedByAdmin = new Map<string, any>()
 
   for (const row of data || []) {
+    const createdByRole = clean(row.created_by_role).toLowerCase()
+    const adminEmail = cleanEmail(row.created_by_admin_email || (createdByRole === "admin" ? row.user_email : ""))
+
+    if (createdByRole === "admin" || adminEmail) {
+      const key = adminEmail || "unknown-admin"
+      const existingAdmin = groupedByAdmin.get(key) || {
+        adminEmail: key,
+        searchCount: 0,
+        searches: [],
+        datasheets: [],
+        lastActivityAt: null,
+      }
+
+      if (!existingAdmin.lastActivityAt || new Date(row.created_at) > new Date(existingAdmin.lastActivityAt)) {
+        existingAdmin.lastActivityAt = row.created_at
+      }
+
+      if (row.event_type === "search") {
+        existingAdmin.searchCount += 1
+        existingAdmin.searches.push(row)
+      }
+
+      if (row.event_type === "datasheet") {
+        existingAdmin.datasheets.push(row)
+      }
+
+      groupedByAdmin.set(key, existingAdmin)
+    }
+
     const clientId = clean(row.client_user_id || row.user_email || "unknown")
     const existing = grouped.get(clientId) || {
       clientId,
       searchCount: 0,
+      searches: [],
       datasheets: [],
       lastActivityAt: null,
     }
@@ -133,6 +164,7 @@ export async function GET(request: Request) {
 
     if (row.event_type === "search") {
       existing.searchCount += 1
+      existing.searches.push(row)
     }
 
     if (row.event_type === "datasheet") {
@@ -142,7 +174,10 @@ export async function GET(request: Request) {
     grouped.set(clientId, existing)
   }
 
-  return NextResponse.json({ clientActivity: Array.from(grouped.values()) })
+  return NextResponse.json({
+    clientActivity: Array.from(grouped.values()),
+    adminActivity: Array.from(groupedByAdmin.values()),
+  })
 }
 
 export async function POST(request: Request) {
@@ -226,7 +261,7 @@ export async function POST(request: Request) {
             error:
               "PRISM activity tracking is not available yet. Run supabase/prism-client-activity-admin-comments.sql, then try again.",
           },
-          { status: 503 }
+          { status: 503 }https://github.com/Achilleforaz/stackblitz-starters-rkbzlacr/blob/main/app/api/admin/client-activity/route.ts
         )
       }
 
