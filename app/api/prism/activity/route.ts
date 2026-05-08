@@ -32,32 +32,12 @@ function isOptionalActivityTableError(error: any) {
   )
 }
 
-function pickActive(rows: any[] | null | undefined) {
-  if (!Array.isArray(rows) || rows.length === 0) return null
-  return rows.find((row: any) => row.is_active !== false) || rows[0]
-}
-
-async function selectClientBy(column: string, value: string, operator: "eq" | "ilike" = "eq") {
-  if (!value) return null
-
-  let query = supabaseAdmin.from("client_users").select("*").limit(20)
-  query = operator === "ilike" ? query.ilike(column, value) : query.eq(column, value)
-
-  const { data, error } = await query
-
-  // Some older deployments do not have auth_user_id / user_id columns.
-  // Ignore that single lookup and continue with the next strategy.
-  if (error) return null
-
-  return pickActive(data)
-}
-
-async function getAuthenticatedClientContext(request: Request) {
+async function getClientProfile(request: Request) {
   const authHeader = request.headers.get("authorization")
 
   if (!authHeader?.startsWith("Bearer ")) return null
 
-  const token = authHeader.replace("Bearer ", "").trim()
+  const token = authHeader.replace("Bearer ", "")
   const {
     data: { user },
     error: userError,
@@ -67,43 +47,62 @@ async function getAuthenticatedClientContext(request: Request) {
 
   const email = cleanEmail(user.email)
 
-  // Important: do NOT use a single .or(...) query here.
-  // If one optional column does not exist in Supabase, PostgREST rejects the whole query
-  // and the activity is silently skipped. Sequential lookups keep tracking robust.
-  const client =
-    (await selectClientBy("email", email, "ilike")) ||
-    (await selectClientBy("email", `%${email}%`, "ilike")) ||
-    (await selectClientBy("auth_user_id", user.id)) ||
-    (await selectClientBy("user_id", user.id)) ||
-    (await selectClientBy("id", user.id))
+  const { data, error } = await supabaseAdmin
+    .from("client_users")
+    .select("*")
+    .or(`email.ilike.${email},auth_user_id.eq.${user.id},user_id.eq.${user.id},id.eq.${user.id}`)
+    .limit(20)
 
-  const activeClient = client && client.is_active !== false ? client : null
+  if (error) return null
 
-  if (activeClient?.id) {
-    if (!activeClient.auth_user_id && !activeClient.user_id && String(activeClient.id) !== String(user.id)) {
-      await supabaseAdmin
-        .from("client_users")
-        .update({ auth_user_id: user.id })
-        .eq("id", activeClient.id)
-    }
+  const matches = data || []
+  const active = matches.find((client: any) => client.is_active !== false) || matches[0] || null
 
-    return {
-      id: clean(activeClient.id),
-      email: cleanEmail(activeClient.email || email),
-      first_name: clean(activeClient.first_name || activeClient.firstName),
-      last_name: clean(activeClient.last_name || activeClient.lastName),
-      company: clean(activeClient.company),
-    }
-  }
+  if (!active || active.is_active === false) return null
 
-  // Fallback: still record the PRISM activity with the authenticated email.
-  // Admin merge is also done by email, so the activity can attach to the client later.
   return {
-    id: clean(user.id),
-    email,
-    first_name: "",
-    last_name: "",
-    company: "",
+    ...active,
+    id: clean(active.id || user.id),
+    email: cleanEmail(active.email || email),
+    first_name: clean(active.first_name),
+    last_name: clean(active.last_name),
+    company: clean(active.company),
+  }
+}
+
+
+async function getAdminProfile(request: Request) {
+  const authHeader = request.headers.get("authorization")
+
+  if (!authHeader?.startsWith("Bearer ")) return null
+
+  const token = authHeader.replace("Bearer ", "")
+  const {
+    data: { user },
+    error: userError,
+  } = await supabaseAdmin.auth.getUser(token)
+
+  if (userError || !user?.email) return null
+
+  const email = cleanEmail(user.email)
+
+  const byEmail = await supabaseAdmin
+    .from("admin_users")
+    .select("*")
+    .ilike("email", email)
+    .limit(20)
+
+  if (byEmail.error) return null
+
+  const matches = byEmail.data || []
+  const active = matches.find((admin: any) => admin.is_active !== false) || matches[0] || null
+
+  if (!active || active.is_active === false) return null
+
+  return {
+    ...active,
+    id: clean(active.auth_user_id || user.id),
+    email: cleanEmail(active.email || email),
   }
 }
 
@@ -115,10 +114,11 @@ function normalizeEventType(value: unknown): ActivityEventType | null {
 
 export async function POST(request: Request) {
   try {
-    const client = await getAuthenticatedClientContext(request)
+    const client = await getClientProfile(request)
+    const admin = client ? null : await getAdminProfile(request)
 
-    if (!client) {
-      return NextResponse.json({ skipped: true, reason: "No authenticated client session" })
+    if (!client && !admin) {
+      return NextResponse.json({ skipped: true, reason: "No active client or admin profile" })
     }
 
     const body = await request.json()
@@ -133,10 +133,12 @@ export async function POST(request: Request) {
     const downloaded = Boolean(body.pdfDownloaded)
 
     const basePayload = {
-      client_user_id: client.id,
-      user_email: client.email,
-      user_name: [client.first_name, client.last_name].filter(Boolean).join(" ").trim(),
-      company: client.company,
+      client_user_id: client?.id || null,
+      user_email: client?.email || admin?.email || null,
+      user_name: client
+        ? [client.first_name, client.last_name].filter(Boolean).join(" ").trim()
+        : "Admin search",
+      company: client?.company || "IMF",
       event_type: eventType,
       selected_fluid: clean(body.selectedFluid),
       product_code: productCode || null,
@@ -148,9 +150,13 @@ export async function POST(request: Request) {
         ? Number(body.matchingProductsCount)
         : null,
       pdf_downloaded: downloaded,
+      created_by_role: admin ? "admin" : "client",
+      created_by_admin_id: admin?.id || null,
+      created_by_admin_email: admin?.email || null,
+      activity_context: admin ? "internal_test" : "client_self_service",
     }
 
-    if (eventType === "datasheet" && downloaded && productCode) {
+    if (client && eventType === "datasheet" && downloaded && productCode) {
       const since = new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString()
       const existing = await supabaseAdmin
         .from("prism_client_activity")
