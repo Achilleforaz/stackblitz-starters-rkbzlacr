@@ -38,6 +38,14 @@ type ClientActivitySummary = {
   lastActivityAt?: string | null
 }
 
+type AdminActivitySummary = {
+  adminEmail: string
+  searchCount: number
+  searches?: ClientDatasheetActivity[]
+  datasheets: ClientDatasheetActivity[]
+  lastActivityAt?: string | null
+}
+
 type ClientUser = {
   id: string
   first_name: string
@@ -76,6 +84,22 @@ function safeValue(value: unknown, fallback = "-") {
 
 function formatClientName(client: ClientUser) {
   return [client.first_name, client.last_name].filter(Boolean).join(" ").trim() || "Client"
+}
+
+function clientFromActivity(activity: ClientDatasheetActivity): ClientUser {
+  const nameParts = String(activity.user_name || "Admin search").trim().split(/\s+/)
+
+  return {
+    id: activity.client_user_id || activity.created_by_admin_email || activity.user_email || activity.id,
+    first_name: nameParts[0] || "Admin",
+    last_name: nameParts.slice(1).join(" "),
+    company: activity.company || "IMF",
+    email: activity.user_email || activity.created_by_admin_email || "-",
+    can_view_prices: false,
+    is_distributor: false,
+    is_active: true,
+    created_at: activity.created_at,
+  }
 }
 
 const followUpStatusOptions = [
@@ -328,6 +352,7 @@ export default function AdminClientsPage() {
   const router = useRouter()
 
   const [clients, setClients] = useState<ClientUser[]>([])
+  const [adminActivity, setAdminActivity] = useState<AdminActivitySummary[]>([])
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState("")
   const [messageType, setMessageType] = useState<"error" | "warning" | "info">("info")
@@ -381,6 +406,7 @@ export default function AdminClientsPage() {
     }
 
     let activitySummaries: ClientActivitySummary[] = []
+    let adminActivitySummaries: AdminActivitySummary[] = []
 
     try {
       const activityResponse = await fetch("/api/admin/client-activity", {
@@ -393,12 +419,14 @@ export default function AdminClientsPage() {
 
       if (activityResponse.ok) {
         activitySummaries = activityResult.clientActivity || []
+        adminActivitySummaries = activityResult.adminActivity || []
       }
     } catch {
       activitySummaries = []
     }
 
     setClients(mergeClientsWithActivity(result.clients || [], activitySummaries))
+    setAdminActivity(adminActivitySummaries)
     setLoading(false)
   }
 
@@ -458,6 +486,18 @@ export default function AdminClientsPage() {
         ...client,
         datasheets: (client.datasheets || []).map((datasheet) =>
           datasheet.id === updatedActivity.id ? updatedActivity : datasheet
+        ),
+      }))
+    )
+
+    setAdminActivity((current) =>
+      current.map((summary) => ({
+        ...summary,
+        datasheets: (summary.datasheets || []).map((datasheet) =>
+          datasheet.id === updatedActivity.id ? updatedActivity : datasheet
+        ),
+        searches: (summary.searches || []).map((search) =>
+          search.id === updatedActivity.id ? updatedActivity : search
         ),
       }))
     )
@@ -524,6 +564,11 @@ export default function AdminClientsPage() {
       adminNote: noteDrafts[activityId] || "",
       followUpStatus: statusDrafts[activityId],
     })
+  }
+
+  async function updateDatasheetStatus(activityId: string, followUpStatus: string) {
+    setStatusDrafts((current) => ({ ...current, [activityId]: followUpStatus }))
+    await updateDatasheetCommercialTracking(activityId, { followUpStatus })
   }
 
   function togglePriceAccess(client: ClientUser) {
@@ -603,6 +648,150 @@ export default function AdminClientsPage() {
             </button>
           </div>
         )}
+
+        <section className="admin-panel mb-6 p-6">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-2xl font-black">Admin PRISM searches</h2>
+              <p className="mt-1 text-sm text-slate-300">
+                Follow searches and datasheets made by commercial/admin accounts, even when they are not attached to a client account.
+              </p>
+            </div>
+            <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-black text-white/70">
+              {adminActivity.reduce((total, summary) => total + (summary.searchCount || 0), 0)} searches · {adminActivity.reduce((total, summary) => total + (summary.datasheets?.length || 0), 0)} datasheets
+            </span>
+          </div>
+
+          {adminActivity.length === 0 ? (
+            <p className="text-sm text-gray-300">No admin PRISM activity recorded yet.</p>
+          ) : (
+            <div className="max-h-[420px] space-y-4 overflow-y-auto pr-2">
+              {adminActivity.map((summary) => (
+                <div key={summary.adminEmail} className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-base font-black text-white">{summary.adminEmail || "Unknown admin"}</h3>
+                      <p className="mt-1 text-xs font-semibold text-white/45">
+                        Last: {formatDateTime(summary.lastActivityAt)}
+                      </p>
+                    </div>
+                    <span className="rounded-full border border-violet-300/40 bg-violet-500/15 px-3 py-1 text-xs font-black text-violet-100">
+                      {summary.searchCount || 0} searches · {summary.datasheets?.length || 0} datasheets
+                    </span>
+                  </div>
+
+                  {((summary.searches || []).length === 0 && (summary.datasheets || []).length === 0) ? (
+                    <p className="mt-3 text-sm text-gray-300">No admin search recorded yet.</p>
+                  ) : (
+                    <div className="mt-3 space-y-2">
+                      {(summary.searches || []).slice(0, 30).map((search) => {
+                        const product = search.product_snapshot || {}
+
+                        return (
+                          <div
+                            key={`${summary.adminEmail}-search-${search.id}`}
+                            className="rounded-2xl border border-white/10 bg-white/[0.035] p-3"
+                          >
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <p className="text-xs font-black uppercase tracking-[0.2em] text-white/45">
+                                  Search · {formatDateTime(search.created_at)}
+                                </p>
+                                <h4 className="mt-1 text-sm font-black text-white">
+                                  {search.product_code || search.product_model || product.model || "Sizing search"}
+                                </h4>
+                                <p className="mt-1 text-xs text-gray-300">
+                                  Fluid {search.selected_fluid || "-"} · Matches {safeValue(search.matching_products_count)}
+                                </p>
+                              </div>
+                              <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-[11px] font-black text-white/60">
+                                Search only
+                              </span>
+                            </div>
+                          </div>
+                        )
+                      })}
+
+                      {(summary.datasheets || []).map((datasheet) => {
+                        const client = clientFromActivity(datasheet)
+                        const product = datasheet.product_snapshot || {}
+
+                        return (
+                          <div
+                            key={`${summary.adminEmail}-${datasheet.id}`}
+                            className="rounded-2xl border border-white/10 bg-black/15 p-3"
+                          >
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <p className="text-xs font-black uppercase tracking-[0.2em] text-white/45">
+                                  Datasheet · {formatDateTime(datasheet.created_at)}
+                                </p>
+                                <h4 className="mt-1 text-sm font-black text-white">
+                                  {datasheet.product_code || "Product not recorded"}
+                                </h4>
+                                <p className="mt-1 text-xs text-gray-300">
+                                  Model {datasheet.product_model || product.model || "-"} · Fluid {datasheet.selected_fluid || "-"}
+                                </p>
+                                {datasheet.admin_note && (
+                                  <p className="mt-2 rounded-xl border border-white/10 bg-white/[0.04] p-2 text-xs font-semibold text-white/60">
+                                    Note: {datasheet.admin_note}
+                                  </p>
+                                )}
+                              </div>
+
+                              <div className="flex flex-wrap items-center justify-end gap-2">
+                                <select
+                                  value={statusDrafts[datasheet.id] ?? datasheet.follow_up_status ?? "to_review"}
+                                  disabled={savingActivityId === datasheet.id}
+                                  onChange={(event) => updateDatasheetStatus(datasheet.id, event.target.value)}
+                                  className={`rounded-full border px-2.5 py-1 text-[11px] font-black outline-none ${getFollowUpStatusClass(statusDrafts[datasheet.id] ?? datasheet.follow_up_status)}`}
+                                  style={{ color: "#0f172a" }}
+                                  title="Commercial follow-up status"
+                                >
+                                  {followUpStatusOptions.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setNoteDrafts((current) => ({
+                                      ...current,
+                                      [datasheet.id]: current[datasheet.id] ?? datasheet.admin_note ?? "",
+                                    }))
+                                    setStatusDrafts((current) => ({
+                                      ...current,
+                                      [datasheet.id]: current[datasheet.id] ?? datasheet.follow_up_status ?? "to_review",
+                                    }))
+                                    setSelectedDatasheet({ client, datasheet })
+                                  }}
+                                  className="rounded-full border border-[#8b5cf6]/45 bg-[#8b5cf6]/14 px-3 py-1 text-xs font-black text-violet-100 transition hover:bg-[#8b5cf6]/24"
+                                >
+                                  See datasheet
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => downloadClientDatasheetPdf(client, datasheet)}
+                                  className="rounded-full border border-emerald-300/35 bg-emerald-500/12 px-3 py-1 text-xs font-black text-emerald-100 transition hover:bg-emerald-500/22"
+                                >
+                                  Download
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
 
         <section className="admin-panel p-6">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -762,9 +951,20 @@ export default function AdminClientsPage() {
                                                 DN {product.dn || "-"} · MWP {product.mwp || "-"} · Port {product.port || "-"} · Setting {product.setting || "-"}
                                               </p>
                                               <div className="mt-2 flex flex-wrap gap-2">
-                                                <span className={`rounded-full border px-2.5 py-1 text-[11px] font-black ${getFollowUpStatusClass(datasheet.follow_up_status)}`}>
-                                                  {getFollowUpStatusLabel(datasheet.follow_up_status)}
-                                                </span>
+                                                <select
+                                                  value={statusDrafts[datasheet.id] ?? datasheet.follow_up_status ?? "to_review"}
+                                                  disabled={savingActivityId === datasheet.id}
+                                                  onChange={(event) => updateDatasheetStatus(datasheet.id, event.target.value)}
+                                                  className={`rounded-full border px-2.5 py-1 text-[11px] font-black outline-none ${getFollowUpStatusClass(statusDrafts[datasheet.id] ?? datasheet.follow_up_status)}`}
+                                                  style={{ color: "#0f172a" }}
+                                                  title="Commercial follow-up status"
+                                                >
+                                                  {followUpStatusOptions.map((option) => (
+                                                    <option key={option.value} value={option.value}>
+                                                      {option.label}
+                                                    </option>
+                                                  ))}
+                                                </select>
                                                 {datasheet.created_by_role === "admin" && (
                                                   <span className="rounded-full border border-violet-300/40 bg-violet-500/15 px-2.5 py-1 text-[11px] font-black text-violet-100">
                                                     Admin assisted
@@ -1045,7 +1245,8 @@ export default function AdminClientsPage() {
                                 [datasheet.id]: event.target.value,
                               }))
                             }
-                            className="w-full rounded-xl border border-[#d9deed] bg-[#f8fafc] px-3 py-2 text-sm font-bold text-slate-800 outline-none focus:border-[#4500E8]"
+                            className="w-full rounded-xl border border-[#d9deed] bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-[#4500E8]"
+                            style={{ color: "#0f172a", backgroundColor: "#ffffff" }}
                           >
                             {followUpStatusOptions.map((option) => (
                               <option key={option.value} value={option.value}>
@@ -1090,7 +1291,8 @@ export default function AdminClientsPage() {
                             }
                             rows={5}
                             placeholder="Example: client wants stainless steel version, send quote next week, check hydrogen compatibility..."
-                            className="mt-2 w-full resize-none rounded-2xl border border-[#d9deed] bg-[#f8fafc] px-3 py-3 text-sm font-semibold text-slate-800 outline-none placeholder:text-slate-400 focus:border-[#4500E8]"
+                            className="mt-2 w-full resize-none rounded-2xl border border-[#d9deed] bg-white px-3 py-3 text-sm font-semibold text-slate-900 outline-none placeholder:text-slate-400 focus:border-[#4500E8]"
+                            style={{ color: "#0f172a", backgroundColor: "#ffffff" }}
                           />
                           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                             <p className="text-xs font-semibold text-slate-500">
