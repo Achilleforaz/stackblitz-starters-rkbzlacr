@@ -119,9 +119,11 @@ export async function GET(request: Request) {
   const grouped = new Map<string, any>()
 
   for (const row of data || []) {
-    const clientId = clean(row.client_user_id || row.user_email || "unknown")
+    const emailKey = cleanEmail(row.user_email)
+    const clientId = emailKey || clean(row.client_user_id || "unknown")
     const existing = grouped.get(clientId) || {
       clientId,
+      userEmail: emailKey || null,
       searchCount: 0,
       datasheets: [],
       lastActivityAt: null,
