@@ -101,7 +101,7 @@ export async function GET(request: Request) {
     .from("prism_client_activity")
     .select("*")
     .order("created_at", { ascending: false })
-    .limit(5000)
+    .limit(1000)
 
   if (activityError) {
     if (isOptionalActivityTableError(activityError)) {
@@ -124,15 +124,12 @@ export async function GET(request: Request) {
       clientId,
       searchCount: 0,
       datasheets: [],
-      activities: [],
       lastActivityAt: null,
     }
 
     if (!existing.lastActivityAt || new Date(row.created_at) > new Date(existing.lastActivityAt)) {
       existing.lastActivityAt = row.created_at
     }
-
-    existing.activities.push(row)
 
     if (row.event_type === "search") {
       existing.searchCount += 1
@@ -154,8 +151,9 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json()
+    const action = clean(body.action)
 
-    if (body.action !== "update_follow_up") {
+    if (!["update_follow_up", "update_commercial_tracking"].includes(action)) {
       return NextResponse.json({ error: "Unknown action" }, { status: 400 })
     }
 
@@ -165,15 +163,58 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing activity id" }, { status: 400 })
     }
 
-    const followedUp = Boolean(body.followedUp)
+    const updatePayload: Record<string, any> = {}
+
+    if (action === "update_follow_up" || body.followedUp !== undefined) {
+      const followedUp = Boolean(body.followedUp)
+      updatePayload.followed_up = followedUp
+      updatePayload.followed_up_at = followedUp ? new Date().toISOString() : null
+      updatePayload.followed_up_by = followedUp ? profile?.email || null : null
+
+      if (!body.followUpStatus) {
+        updatePayload.follow_up_status = followedUp ? "followed_up" : "to_review"
+      }
+    }
+
+    if (body.followUpStatus !== undefined) {
+      const allowedStatuses = new Set([
+        "to_review",
+        "quote_to_send",
+        "waiting_client_feedback",
+        "followed_up",
+        "closed",
+      ])
+      const followUpStatus = clean(body.followUpStatus) || "to_review"
+
+      if (!allowedStatuses.has(followUpStatus)) {
+        return NextResponse.json({ error: "Invalid follow-up status" }, { status: 400 })
+      }
+
+      updatePayload.follow_up_status = followUpStatus
+      updatePayload.followed_up = followUpStatus === "followed_up" || followUpStatus === "closed"
+
+      if (updatePayload.followed_up) {
+        updatePayload.followed_up_at = new Date().toISOString()
+        updatePayload.followed_up_by = profile?.email || null
+      }
+    }
+
+    if (body.adminNote !== undefined) {
+      const adminNote = clean(body.adminNote)
+      updatePayload.admin_note = adminNote || null
+    }
+
+    if (body.activityContext !== undefined) {
+      updatePayload.activity_context = clean(body.activityContext) || "client_self_service"
+    }
+
+    if (Object.keys(updatePayload).length === 0) {
+      return NextResponse.json({ error: "Nothing to update" }, { status: 400 })
+    }
 
     const { data, error: updateError } = await supabaseAdmin
       .from("prism_client_activity")
-      .update({
-        followed_up: followedUp,
-        followed_up_at: followedUp ? new Date().toISOString() : null,
-        followed_up_by: followedUp ? profile?.email || null : null,
-      })
+      .update(updatePayload)
       .eq("id", activityId)
       .select("*")
       .single()
@@ -183,7 +224,7 @@ export async function POST(request: Request) {
         return NextResponse.json(
           {
             error:
-              "PRISM activity tracking is not available yet. Run supabase/prism-client-activity.sql, then try again.",
+              "PRISM activity tracking is not available yet. Run supabase/prism-client-activity-admin-comments.sql, then try again.",
           },
           { status: 503 }
         )
