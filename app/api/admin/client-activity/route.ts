@@ -101,7 +101,7 @@ export async function GET(request: Request) {
     .from("prism_client_activity")
     .select("*")
     .order("created_at", { ascending: false })
-    .limit(1000)
+    .limit(5000)
 
   if (activityError) {
     if (isOptionalActivityTableError(activityError)) {
@@ -119,19 +119,20 @@ export async function GET(request: Request) {
   const grouped = new Map<string, any>()
 
   for (const row of data || []) {
-    const emailKey = cleanEmail(row.user_email)
-    const clientId = emailKey || clean(row.client_user_id || "unknown")
+    const clientId = clean(row.client_user_id || row.user_email || "unknown")
     const existing = grouped.get(clientId) || {
       clientId,
-      userEmail: emailKey || null,
       searchCount: 0,
       datasheets: [],
+      activities: [],
       lastActivityAt: null,
     }
 
     if (!existing.lastActivityAt || new Date(row.created_at) > new Date(existing.lastActivityAt)) {
       existing.lastActivityAt = row.created_at
     }
+
+    existing.activities.push(row)
 
     if (row.event_type === "search") {
       existing.searchCount += 1
